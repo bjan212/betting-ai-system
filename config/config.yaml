@@ -1,0 +1,172 @@
+# Betting AI System Configuration
+
+system:
+  name: "AI Betting Analysis System"
+  version: "1.0.0"
+  environment: "${ENVIRONMENT:development}"
+
+database:
+  url: "${DATABASE_URL}"
+  pool_size: ${DB_POOL_SIZE:20}
+  max_overflow: ${DB_MAX_OVERFLOW:10}
+  echo: false
+  pool_pre_ping: true
+
+sports:
+  supported:
+    - ufc
+    - tennis
+    - football
+    - soccer
+    - basketball
+    - horse_racing
+  
+  data_sources:
+    odds:
+      provider: "odds_api"
+      api_key: "${ODDS_API_KEY}"
+      update_interval: 60  # seconds
+      endpoints:
+        - "https://api.the-odds-api.com/v4/sports"
+    
+    statistics:
+      provider: "sportradar"
+      update_interval: 300  # seconds
+    
+    horse_racing:
+      provider: "racing_api"
+      update_interval: 120  # seconds
+
+ml_models:
+  ensemble:
+    models:
+      - name: "xgboost"
+        weight: 0.35
+        enabled: true
+      - name: "random_forest"
+        weight: 0.25
+        enabled: true
+      - name: "deep_rl"
+        weight: 0.25
+        enabled: true
+      - name: "bayesian"
+        weight: 0.15
+        enabled: true
+  
+  training:
+    retrain_interval: 86400  # 24 hours
+    min_samples: 1000
+    validation_split: 0.2
+    test_split: 0.1
+  
+  hyperparameters:
+    xgboost:
+      max_depth: 8
+      learning_rate: 0.1
+      n_estimators: 200
+      subsample: 0.8
+      colsample_bytree: 0.8
+    
+    random_forest:
+      n_estimators: 150
+      max_depth: 15
+      min_samples_split: 10
+      min_samples_leaf: 4
+    
+    deep_rl:
+      learning_rate: 0.001
+      gamma: 0.99
+      epsilon_start: 1.0
+      epsilon_end: 0.01
+      epsilon_decay: 0.995
+
+recommendation:
+  top3_selection:
+    min_confidence: "${MIN_CONFIDENCE_THRESHOLD:0.8}"
+    min_expected_value: "${MIN_EXPECTED_VALUE:1.1}"
+    max_risk_score: "${MAX_RISK_SCORE:0.7}"
+    time_window_hours: "${TIME_WINDOW_HOURS:24}"
+    
+  scoring:
+    confidence_weight: 0.4
+    expected_value_weight: 0.35
+    risk_adjusted_return_weight: 0.25
+  
+  stake_sizing:
+    method: "kelly_criterion"
+    max_stake_percentage: 0.05  # 5% of bankroll
+    min_stake_amount: 10  # USD equivalent
+    max_stake_amount: 1000  # USD equivalent
+
+betting_platforms:
+  stake:
+    base_url: "${STAKE_BASE_URL}"
+    api_key: "${STAKE_API_KEY}"
+    api_secret: "${STAKE_API_SECRET}"
+    supported_currencies:
+      - BTC
+      - ETH
+      - USDT
+      - BNB
+    default_currency: "USDT"
+    timeout: 30
+    max_retries: 3
+
+cryptocurrency:
+  blockchain: "binance_smart_chain"
+  rpc_url: "${BSC_RPC_URL}"
+  wallet_address: "${WALLET_ADDRESS}"
+  gas_limit: 21000
+  gas_price_multiplier: 1.2
+  
+  supported_tokens:
+    - symbol: "BNB"
+      contract: null  # Native token
+    - symbol: "USDT"
+      contract: "0x55d398326f99059fF775485246999027B3197955"
+    - symbol: "BUSD"
+      contract: "0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56"
+
+backtesting:
+  enabled: true
+  sample_size: 10000
+  start_date: "2023-01-01"
+  metrics:
+    - roi
+    - win_rate
+    - average_odds
+    - sharpe_ratio
+    - max_drawdown
+    - profit_factor
+
+logging:
+  level: "${LOG_LEVEL:INFO}"
+  format: "json"
+  handlers:
+    - console
+    - file
+  file:
+    path: "logs/betting_ai.log"
+    max_bytes: 10485760  # 10MB
+    backup_count: 5
+
+monitoring:
+  prometheus:
+    enabled: ${ENABLE_PROMETHEUS:true}
+    port: 9090
+  
+  sentry:
+    enabled: true
+    dsn: "${SENTRY_DSN}"
+    traces_sample_rate: 0.1
+
+api:
+  host: "0.0.0.0"
+  port: 8000
+  workers: 4
+  rate_limit: ${API_RATE_LIMIT:100}
+  cors:
+    enabled: true
+    origins:
+      - "http://localhost:3000"
+      - "http://localhost:8080"

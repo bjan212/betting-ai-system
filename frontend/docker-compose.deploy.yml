@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: betting_ai_frontend
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - VITE_API_URL=${VITE_API_URL:-http://localhost:8000}
+      - VITE_ENV=production
+    restart: unless-stopped
+    networks:
+      - betting_network
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  backend:
+    image: betting_ai_backend:latest
+    container_name: betting_ai_backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - STAKE_API_KEY=${STAKE_API_KEY}
+      - ODDS_API_KEY=${ODDS_API_KEY}
+    restart: unless-stopped
+    networks:
+      - betting_network
+
+networks:
+  betting_network:
+    driver: bridge

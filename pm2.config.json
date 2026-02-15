@@ -1,0 +1,48 @@
+{
+  "apps": [
+    {
+      "name": "betting-api",
+      "script": "venv/bin/python",
+      "args": "-m uvicorn src.api.main:app --host 0.0.0.0 --port 8000",
+      "cwd": "/Users/redabhaj/Desktop/betting-ai-system",
+      "interpreter": "none",
+      "instances": 1,
+      "exec_mode": "fork",
+      "watch": ["src"],
+      "ignore_watch": ["logs", "data", "frontend", "tests", "*.db"],
+      "env": {
+        "NODE_ENV": "production",
+        "PYTHONPATH": ".",
+        "LOG_LEVEL": "INFO"
+      },
+      "error_file": "logs/backend-error.log",
+      "out_file": "logs/backend-out.log",
+      "log_date_format": "YYYY-MM-DD HH:mm:ss Z",
+      "merge_logs": true,
+      "autorestart": true,
+      "max_restarts": 10,
+      "min_uptime": "10s",
+      "max_memory_restart": "1G"
+    },
+    {
+      "name": "betting-frontend",
+      "script": "npm",
+      "args": "run preview -- --port 3000 --host 0.0.0.0",
+      "cwd": "/Users/redabhaj/Desktop/betting-ai-system/frontend",
+      "interpreter": "bash",
+      "instances": 1,
+      "exec_mode": "fork",
+      "env": {
+        "NODE_ENV": "production"
+      },
+      "error_file": "../logs/frontend-error.log",
+      "out_file": "../logs/frontend-out.log",
+      "log_date_format": "YYYY-MM-DD HH:mm:ss Z",
+      "merge_logs": true,
+      "autorestart": true,
+      "max_restarts": 10,
+      "min_uptime": "10s",
+      "max_memory_restart": "512M"
+    }
+  ]
+}

@@ -1,0 +1,55 @@
+# Python
+venv/
+ven/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Node
+node_modules/
+frontend/node_modules/
+frontend/dist/
+.vite/
+
+# Environment & secrets
+.env
+*.env.local
+
+# Database
+*.db
+*.sqlite3
+
+# Logs
+logs/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Docker
+docker-compose.override.yml
+
+# PM2
+.pm2/
+
+# PID files
+*.pid
+
+# Data (regenerated)
+data/*.json
+data/*.csv
+
+# Build artifacts
+*.pyc

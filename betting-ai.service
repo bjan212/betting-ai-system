@@ -1,0 +1,38 @@
+# Systemd Service File for AI Betting System
+# Install: sudo cp betting-ai.service /etc/systemd/system/
+# Enable: sudo systemctl enable betting-ai
+# Start: sudo systemctl start betting-ai
+# Status: sudo systemctl status betting-ai
+# Logs: sudo journalctl -u betting-ai -f
+
+[Unit]
+Description=AI Betting Analysis System
+After=network.target
+
+[Service]
+Type=forking
+User=yourusername
+WorkingDirectory=/Users/redabhaj/Desktop/betting-ai-system
+Environment="PATH=/Users/redabhaj/Desktop/betting-ai-system/venv/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="PYTHONPATH=/Users/redabhaj/Desktop/betting-ai-system"
+
+# Start script
+ExecStart=/Users/redabhaj/Desktop/betting-ai-system/start.sh
+
+# Stop script
+ExecStop=/Users/redabhaj/Desktop/betting-ai-system/stop.sh
+
+# Restart policy
+Restart=on-failure
+RestartSec=10s
+
+# Resource limits
+MemoryLimit=2G
+CPUQuota=80%
+
+# Logging
+StandardOutput=append:/Users/redabhaj/Desktop/betting-ai-system/logs/systemd.log
+StandardError=append:/Users/redabhaj/Desktop/betting-ai-system/logs/systemd-error.log
+
+[Install]
+WantedBy=multi-user.target
