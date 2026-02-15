@@ -22,7 +22,7 @@
     }
   ],
   "env": {
-    "VITE_API_URL": "@vite_api_url",
+    "VITE_API_URL": "http://localhost:8000",
     "VITE_ENV": "production"
   }
 }
