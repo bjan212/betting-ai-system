@@ -79,13 +79,27 @@ class PolymarketBalanceResponse(BaseModel):
 # Initialize ensemble predictor (singleton pattern)
 _ensemble_predictor = None
 
+TRAINED_MODEL_PATH = "data/models/xgboost_latest.pkl"
+
 
 def get_ensemble_predictor() -> EnsemblePredictor:
-    """Get or create ensemble predictor"""
+    """Get or create ensemble predictor, loading trained model if available."""
     global _ensemble_predictor
     if _ensemble_predictor is None:
         _ensemble_predictor = EnsemblePredictor()
         xgboost_model = XGBoostModel()
+
+        # Load trained model from disk if it exists
+        import os
+        if os.path.exists(TRAINED_MODEL_PATH):
+            try:
+                xgboost_model.load_model(TRAINED_MODEL_PATH)
+                logger.info(f"Loaded trained XGBoost model from {TRAINED_MODEL_PATH}")
+            except Exception as e:
+                logger.warning(f"Failed to load trained model: {e} — using untrained")
+        else:
+            logger.warning("No trained model found — predictions will use defaults")
+
         _ensemble_predictor.register_model('xgboost', xgboost_model)
         logger.info("Ensemble predictor initialized")
     return _ensemble_predictor

@@ -142,6 +142,32 @@ async def _try_fetch_live_odds():
         return False
 
 
+def _ensure_trained_model():
+    """Train or load the XGBoost model so predictions are real, not defaults."""
+    import os
+    from pathlib import Path
+
+    model_path = Path("data/models/xgboost_latest.pkl")
+
+    if model_path.exists():
+        logger.info(f"Trained model found at {model_path}")
+        return
+
+    # No model on disk — train one from current odds data
+    logger.info("No trained model found — training from current odds data...")
+    try:
+        from train_model import build_training_dataset, train_model, save_trained_model
+        df = build_training_dataset()
+        if len(df) < 20:
+            logger.warning(f"Only {len(df)} training samples — skipping training")
+            return
+        model = train_model(df)
+        save_trained_model(model)
+        logger.info("Model trained and saved on startup")
+    except Exception as e:
+        logger.error(f"Auto-training failed: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager"""
@@ -156,6 +182,14 @@ async def lifespan(app: FastAPI):
     # Fall back to demo seed only if live fetch got nothing
     if not live_success:
         _seed_demo_data_if_empty()
+
+    # Ensure ML model is trained (uses DB odds data)
+    _ensure_trained_model()
+
+    # Reset the predictor singleton so it picks up the trained model
+    from src.api.routes.betting_routes import _ensemble_predictor
+    import src.api.routes.betting_routes as br
+    br._ensemble_predictor = None
     
     yield
     

@@ -212,11 +212,44 @@ class Top3Selector:
         Returns:
             Event data dictionary
         """
-        # Extract odds by selection
-        odds_map = {}
+        # Aggregate odds by selection across bookmakers
+        odds_by_selection: dict = {}
+        bookmaker_count = 0
         for odd in odds:
-            odds_map[odd.selection] = odd.odds_decimal
-        
+            odds_by_selection.setdefault(odd.selection, []).append(odd.odds_decimal)
+            bookmaker_count += 1
+
+        def _avg(lst, default=2.0):
+            return sum(lst) / len(lst) if lst else default
+
+        home_odds = _avg(odds_by_selection.get('home', odds_by_selection.get(event.home_team, [])), 2.0)
+        away_odds = _avg(odds_by_selection.get('away', odds_by_selection.get(event.away_team, [])), 2.0)
+        draw_odds = _avg(odds_by_selection.get('Draw', odds_by_selection.get('draw', [])), 3.5)
+
+        # Compute implied probabilities (vig-removed) from bookmaker consensus
+        raw_home = 1.0 / home_odds if home_odds > 1 else 1.0
+        raw_away = 1.0 / away_odds if away_odds > 1 else 1.0
+        raw_draw = 1.0 / draw_odds if draw_odds > 1 else 1.0
+        total_raw = raw_home + raw_away + raw_draw
+        if total_raw > 0:
+            home_implied = raw_home / total_raw
+            away_implied = raw_away / total_raw
+        else:
+            home_implied = away_implied = 0.5
+
+        # Derive statistical features from odds (market-based proxies)
+        strength_ratio = home_implied / (home_implied + away_implied) if (home_implied + away_implied) > 0 else 0.5
+        n_h2h = 8  # Typical h2h history
+        h2h_home = int(round(n_h2h * strength_ratio))
+        h2h_away = int(round(n_h2h * (1 - strength_ratio)))
+        h2h_draws = max(0, n_h2h - h2h_home - h2h_away)
+
+        # Odds spread as proxy for market certainty/movement
+        home_odds_list = odds_by_selection.get('home', odds_by_selection.get(event.home_team, [home_odds]))
+        away_odds_list = odds_by_selection.get('away', odds_by_selection.get(event.away_team, [away_odds]))
+        home_std = float(np.std(home_odds_list)) if np and len(home_odds_list) > 1 else 0.0
+        away_std = float(np.std(away_odds_list)) if np and len(away_odds_list) > 1 else 0.0
+
         event_data = {
             'event_id': event.id,
             'event_name': event.name,
@@ -225,35 +258,35 @@ class Top3Selector:
             'away_team': event.away_team,
             'start_time': event.start_time,
             'venue': event.venue,
-            
-            # Odds
-            'home_odds': odds_map.get('home', 2.0),
-            'away_odds': odds_map.get('away', 2.0),
-            'draw_odds': odds_map.get('draw', 3.0),
-            
-            # Default features (would be populated from historical data)
-            'home_win_rate': 0.5,
-            'away_win_rate': 0.5,
-            'home_recent_form': 0.5,
-            'away_recent_form': 0.5,
-            'h2h_home_wins': 0,
-            'h2h_away_wins': 0,
-            'h2h_draws': 0,
-            'odds_movement_home': 0.0,
-            'odds_movement_away': 0.0,
+
+            # Real odds from bookmakers
+            'home_odds': home_odds,
+            'away_odds': away_odds,
+            'draw_odds': draw_odds,
+
+            # Market-derived features (instead of hardcoded defaults)
+            'home_win_rate': round(home_implied, 4),
+            'away_win_rate': round(away_implied, 4),
+            'home_recent_form': round(min(0.9, home_implied * 1.1), 4),
+            'away_recent_form': round(min(0.9, away_implied * 1.1), 4),
+            'h2h_home_wins': h2h_home,
+            'h2h_away_wins': h2h_away,
+            'h2h_draws': h2h_draws,
+            'odds_movement_home': round(home_std * 0.3, 4),
+            'odds_movement_away': round(away_std * 0.3, 4),
             'is_home_game': 1,
-            'venue_advantage': 0.0,
-            'days_since_last_game_home': 7,
-            'days_since_last_game_away': 7,
-            'home_goals_scored_avg': 1.5,
-            'away_goals_scored_avg': 1.5,
-            'home_goals_conceded_avg': 1.5,
-            'away_goals_conceded_avg': 1.5,
-            'home_ranking': 50,
-            'away_ranking': 50,
-            'ranking_difference': 0
+            'venue_advantage': round((home_implied - 0.5) * 2, 4),
+            'days_since_last_game_home': 5,
+            'days_since_last_game_away': 5,
+            'home_goals_scored_avg': round(1.0 + home_implied * 1.5, 2),
+            'away_goals_scored_avg': round(1.0 + away_implied * 1.5, 2),
+            'home_goals_conceded_avg': round(1.0 + (1 - home_implied) * 1.5, 2),
+            'away_goals_conceded_avg': round(1.0 + (1 - away_implied) * 1.5, 2),
+            'home_ranking': max(1, int(100 - home_implied * 100)),
+            'away_ranking': max(1, int(100 - away_implied * 100)),
+            'ranking_difference': int((away_implied - home_implied) * 100),
         }
-        
+
         return event_data
     
     def _create_recommendation(
@@ -276,15 +309,34 @@ class Top3Selector:
             Recommendation dictionary
         """
         # Calculate expected value
-        probability = prediction.get('probability', 0.5)
+        # The model predicts P(home_win). Map to the correct selection.
+        raw_home_prob = prediction.get('probability', 0.5)
+        selection_lower = odds.selection.lower()
+
+        home_team_lower = (event.home_team or '').lower()
+        away_team_lower = (event.away_team or '').lower()
+
+        if selection_lower in ('home', home_team_lower) or selection_lower == event.home_team:
+            probability = raw_home_prob
+        elif selection_lower in ('draw',):
+            # Draw probability: approximate from 1 - home - away
+            draw_odds_val = event_data.get('draw_odds', 3.5)
+            home_odds_val = event_data.get('home_odds', 2.0)
+            away_odds_val = event_data.get('away_odds', 2.0)
+            # Use market-implied draw probability
+            implied_draw = (1.0 / draw_odds_val) / ((1.0 / home_odds_val) + (1.0 / away_odds_val) + (1.0 / draw_odds_val))
+            probability = implied_draw
+        else:
+            # Away team or named team (not home) → P(away) = 1 - P(home) - P(draw)
+            probability = 1.0 - raw_home_prob
         odds_decimal = odds.odds_decimal
         
         # Calculate EV with vigorish (bookmaker commission)
         ev_with_vig = calculate_ev_with_vig(probability, odds_decimal, vig_rate=0.0476)
         expected_value = ev_with_vig - 1  # Convert to edge
         
-        # Calculate risk score (inverse of confidence)
-        confidence = prediction.get('confidence', 0.5)
+        # Confidence should reflect this selection's probability, not only the model's raw confidence
+        confidence = probability  # Use the selection-adjusted probability as confidence
         risk_score = 1 - confidence
         
         # Calculate recommended unit size (Leans.ai style)
@@ -525,8 +577,17 @@ class Top3Selector:
             reverse=True
         )
         
-        # Select top 3
-        top3 = ranked[:3]
+        # Select top 3, ensuring event diversity (max 1 per event)
+        top3 = []
+        seen_events = set()
+        for rec in ranked:
+            eid = rec.get('event_id')
+            if eid in seen_events:
+                continue
+            seen_events.add(eid)
+            top3.append(rec)
+            if len(top3) >= 3:
+                break
         
         # Add rank
         for i, rec in enumerate(top3, 1):

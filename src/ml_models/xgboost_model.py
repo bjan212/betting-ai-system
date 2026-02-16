@@ -30,24 +30,40 @@ class XGBoostModel:
     XGBoost model for sports betting predictions
     """
     
+    # Canonical feature order — MUST match between training and inference
+    FEATURE_NAMES = [
+        'home_win_rate', 'away_win_rate', 'home_recent_form', 'away_recent_form',
+        'h2h_home_wins', 'h2h_away_wins', 'h2h_draws',
+        'home_odds', 'away_odds', 'draw_odds',
+        'odds_movement_home', 'odds_movement_away',
+        'is_home_game', 'venue_advantage',
+        'days_since_last_game_home', 'days_since_last_game_away',
+        'home_goals_scored_avg', 'away_goals_scored_avg',
+        'home_goals_conceded_avg', 'away_goals_conceded_avg',
+        'home_ranking', 'away_ranking', 'ranking_difference',
+    ]
+
     def __init__(self, model_name: str = "xgboost"):
         """Initialize XGBoost model"""
         self.model_name = model_name
         self.model = None
-        self.feature_names = []
+        self.feature_names = list(self.FEATURE_NAMES)
         self.is_trained = False
         
         # Load hyperparameters from config
         ml_config = config.get_ml_config()
         self.hyperparameters = ml_config.get('hyperparameters', {}).get('xgboost', {})
         
-        # Default hyperparameters
+        # Default hyperparameters — tuned to reduce overfitting
         self.params = {
-            'max_depth': self.hyperparameters.get('max_depth', 8),
-            'learning_rate': self.hyperparameters.get('learning_rate', 0.1),
-            'n_estimators': self.hyperparameters.get('n_estimators', 200),
-            'subsample': self.hyperparameters.get('subsample', 0.8),
-            'colsample_bytree': self.hyperparameters.get('colsample_bytree', 0.8),
+            'max_depth': self.hyperparameters.get('max_depth', 4),
+            'learning_rate': self.hyperparameters.get('learning_rate', 0.05),
+            'n_estimators': self.hyperparameters.get('n_estimators', 300),
+            'subsample': self.hyperparameters.get('subsample', 0.7),
+            'colsample_bytree': self.hyperparameters.get('colsample_bytree', 0.7),
+            'min_child_weight': 5,
+            'reg_alpha': 0.1,
+            'reg_lambda': 1.0,
             'objective': 'binary:logistic',
             'eval_metric': 'logloss',
             'random_state': 42
@@ -127,12 +143,12 @@ class XGBoostModel:
         try:
             logger.info(f"Training XGBoost model with {len(training_data)} samples")
             
-            # Separate features and target
-            X = training_data.drop(columns=[target_column])
+            # Separate features and target, enforcing canonical column order
+            X = training_data[self.FEATURE_NAMES]
             y = training_data[target_column]
             
             # Store feature names
-            self.feature_names = X.columns.tolist()
+            self.feature_names = list(self.FEATURE_NAMES)
             
             # Split data
             X_train, X_val, y_train, y_val = train_test_split(
