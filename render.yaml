@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: betting-ai-api
+    runtime: python
+    repo: https://github.com/bjan212/betting-ai-system
+    branch: main
+    buildCommand: pip install -r requirements-deploy.txt
+    startCommand: uvicorn src.api.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        value: sqlite:///./betting_ai.db
+      - key: ENVIRONMENT
+        value: production
+      - key: LOG_LEVEL
+        value: INFO
+      - key: DEMO_MODE
+        value: "false"
+      - key: PYTHON_VERSION
+        value: "3.11.0"
+      - key: CORS_ORIGINS
+        value: "https://doubleup.vercel.app,http://localhost:3000"
+      - key: ODDS_API_KEY
+        sync: false
+    plan: free

@@ -170,3 +170,5 @@ api:
     origins:
       - "http://localhost:3000"
       - "http://localhost:8080"
+      - "https://doubleup.vercel.app"
+      - "https://*.vercel.app"

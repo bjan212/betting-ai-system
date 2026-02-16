@@ -40,13 +40,21 @@ app = FastAPI(
 )
 
 # CORS configuration
+import os
 api_config = config.get_api_config()
 cors_config = api_config.get('cors', {})
+
+# Allow env override for CORS origins in production
+cors_origins_env = os.getenv('CORS_ORIGINS', '')
+if cors_origins_env:
+    cors_origins = [o.strip() for o in cors_origins_env.split(',')]
+else:
+    cors_origins = cors_config.get('origins', ["*"])
 
 if cors_config.get('enabled', True):
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=cors_config.get('origins', ["*"]),
+        allow_origins=cors_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
