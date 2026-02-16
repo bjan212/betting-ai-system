@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { TrendingUp, RefreshCw, Activity, Wallet, BarChart3, Settings } from 'lucide-react';
+import { TrendingUp, RefreshCw, Activity, Wallet, BarChart3, Settings, ExternalLink, Search } from 'lucide-react';
 import BetCard from './components/BetCard';
 import { bettingAPI, cryptoAPI, systemAPI } from './services/api';
 
@@ -19,6 +19,9 @@ function App() {
   const [polymarketStatus, setPolymarketStatus] = useState(null);
   const [polymarketBalance, setPolymarketBalance] = useState(null);
   const [polymarketBalanceError, setPolymarketBalanceError] = useState(null);
+  const [polymarketMarkets, setPolymarketMarkets] = useState([]);
+  const [polymarketMarketsLoading, setPolymarketMarketsLoading] = useState(false);
+  const [polymarketSearch, setPolymarketSearch] = useState('');
   const [polymarketConfig, setPolymarketConfig] = useState({
     privateKey: '',
     funderAddress: '',
@@ -148,18 +151,18 @@ function App() {
 
     try {
       setPlacingBet(true);
-      const result = await bettingAPI.placeBet({
-        tokenId: String(pendingBet.event_id),
-        side: 'BUY',
-        amount: pendingBet.recommended_stake,
-      });
-
-      alert(`Bet placed successfully!\nOrder ID: ${result.order_id || 'N/A'}`);
+      // Open sportsbook in new tab
+      const url = pendingBet.bet_link?.search_url || pendingBet.bet_link?.base_url;
+      if (url) {
+        window.open(url, '_blank', 'noopener,noreferrer');
+      } else {
+        alert('No sportsbook link available for this bet.');
+      }
       setShowBetConfirm(false);
       setPendingBet(null);
     } catch (err) {
-      alert(err.response?.data?.detail || 'Failed to place bet');
-      console.error('Error placing bet:', err);
+      alert('Failed to open sportsbook link');
+      console.error('Error opening sportsbook:', err);
     } finally {
       setPlacingBet(false);
     }
@@ -203,6 +206,24 @@ function App() {
     fetchRecommendations();
     fetchBalance();
     fetchStats();
+  };
+
+  // Fetch Polymarket sports futures markets
+  const fetchPolymarketMarkets = async (query = null) => {
+    try {
+      setPolymarketMarketsLoading(true);
+      const data = await bettingAPI.getPolymarketSports(query);
+      setPolymarketMarkets(data.markets || []);
+    } catch (err) {
+      console.error('Error fetching Polymarket markets:', err);
+    } finally {
+      setPolymarketMarketsLoading(false);
+    }
+  };
+
+  const handlePolymarketSearch = (e) => {
+    e.preventDefault();
+    fetchPolymarketMarkets(polymarketSearch || null);
   };
 
   return (
@@ -419,7 +440,11 @@ function App() {
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
             <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-6">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-xl font-bold text-gray-900">Confirm Bet</h3>
+                <h3 className="text-xl font-bold text-gray-900">
+                  {pendingBet.bet_link?.bookmaker_display
+                    ? `Bet at ${pendingBet.bet_link.bookmaker_display}`
+                    : 'Place Bet'}
+                </h3>
                 <button
                   onClick={() => setShowBetConfirm(false)}
                   className="text-gray-400 hover:text-gray-600"
@@ -427,6 +452,12 @@ function App() {
                   ✕
                 </button>
               </div>
+
+              <p className="text-sm text-gray-500 mb-4">
+                You'll be redirected to{' '}
+                <strong>{pendingBet.bet_link?.bookmaker_display || pendingBet.bookmaker}</strong>{' '}
+                to place this bet. Review the details below:
+              </p>
 
               <div className="space-y-3 text-sm text-gray-700">
                 <div className="flex items-center justify-between">
@@ -442,9 +473,15 @@ function App() {
                   <span className="font-semibold text-gray-900">{pendingBet.recommended_odds.toFixed(2)}</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span>Stake</span>
+                  <span>Recommended Stake</span>
                   <span className="font-semibold text-gray-900">
-                    ${pendingBet.recommended_stake.toFixed(2)} {polymarketConfig.defaultCurrency}
+                    ${pendingBet.recommended_stake.toFixed(2)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Bookmaker</span>
+                  <span className="font-semibold text-primary-600">
+                    {pendingBet.bet_link?.bookmaker_display || pendingBet.bookmaker}
                   </span>
                 </div>
               </div>
@@ -459,9 +496,12 @@ function App() {
                 <button
                   onClick={handleConfirmBet}
                   disabled={placingBet}
-                  className="btn btn-primary"
+                  className="btn btn-primary flex items-center gap-2"
                 >
-                  {placingBet ? 'Placing...' : 'Confirm Bet'}
+                  <ExternalLink className="w-4 h-4" />
+                  {placingBet
+                    ? 'Opening...'
+                    : `Go to ${pendingBet.bet_link?.bookmaker_display || 'Sportsbook'}`}
                 </button>
               </div>
             </div>
@@ -552,6 +592,117 @@ function App() {
             </div>
           </div>
         )}
+
+        {/* Polymarket Futures Section */}
+        <div className="mt-12 mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900 mb-1">
+                🔮 Polymarket Sports Futures
+              </h2>
+              <p className="text-gray-600 text-sm">
+                Prediction markets for championships, MVPs, and more
+              </p>
+            </div>
+            <button
+              onClick={() => fetchPolymarketMarkets()}
+              disabled={polymarketMarketsLoading}
+              className="btn btn-secondary flex items-center gap-2"
+            >
+              <RefreshCw className={`w-4 h-4 ${polymarketMarketsLoading ? 'animate-spin' : ''}`} />
+              {polymarketMarkets.length > 0 ? 'Refresh' : 'Load Markets'}
+            </button>
+          </div>
+
+          {/* Search */}
+          {polymarketMarkets.length > 0 && (
+            <form onSubmit={handlePolymarketSearch} className="mb-4">
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    type="text"
+                    value={polymarketSearch}
+                    onChange={(e) => setPolymarketSearch(e.target.value)}
+                    placeholder="Search markets (e.g. NBA, Champions League, World Cup...)"
+                    className="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-300 focus:ring-primary-500 focus:border-primary-500 text-sm"
+                  />
+                </div>
+                <button type="submit" className="btn btn-primary px-4 py-2 text-sm">
+                  Search
+                </button>
+                {polymarketSearch && (
+                  <button
+                    type="button"
+                    onClick={() => { setPolymarketSearch(''); fetchPolymarketMarkets(); }}
+                    className="btn btn-secondary px-4 py-2 text-sm"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+            </form>
+          )}
+
+          {polymarketMarketsLoading && (
+            <div className="text-center py-8 text-gray-500">Loading Polymarket futures...</div>
+          )}
+
+          {!polymarketMarketsLoading && polymarketMarkets.length > 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {polymarketMarkets.slice(0, 12).map((market, idx) => (
+                <div key={idx} className="card hover:shadow-lg transition-shadow">
+                  <div className="mb-3">
+                    <h4 className="font-semibold text-gray-900 text-sm leading-tight mb-1">
+                      {market.question}
+                    </h4>
+                    {market.event_title && (
+                      <span className="text-xs text-gray-500">{market.event_title}</span>
+                    )}
+                  </div>
+
+                  {/* Top outcomes by price */}
+                  {market.tokens && market.tokens.length > 0 && (
+                    <div className="space-y-1.5 mb-3">
+                      {market.tokens
+                        .filter((t) => t.price > 0.01)
+                        .sort((a, b) => b.price - a.price)
+                        .slice(0, 5)
+                        .map((token, ti) => (
+                          <div
+                            key={ti}
+                            className="flex items-center justify-between text-xs"
+                          >
+                            <span className="text-gray-700 truncate mr-2">{token.outcome}</span>
+                            <span className="font-semibold text-primary-600 whitespace-nowrap">
+                              {(token.price * 100).toFixed(0)}%
+                            </span>
+                          </div>
+                        ))}
+                    </div>
+                  )}
+
+                  {market.url && (
+                    <a
+                      href={market.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-xs text-primary-600 hover:text-primary-700 font-medium"
+                    >
+                      Trade on Polymarket <ExternalLink className="w-3 h-3" />
+                    </a>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {!polymarketMarketsLoading && polymarketMarkets.length > 12 && (
+            <div className="text-center mt-4 text-sm text-gray-500">
+              Showing 12 of {polymarketMarkets.length} markets. Use search to find specific ones.
+            </div>
+          )}
+        </div>
 
         {/* Info Footer */}
         <div className="mt-12 p-6 bg-blue-50 border border-blue-200 rounded-lg">

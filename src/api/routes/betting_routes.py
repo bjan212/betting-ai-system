@@ -13,6 +13,8 @@ from src.ml_models.ensemble_predictor import EnsemblePredictor
 from src.ml_models.xgboost_model import XGBoostModel
 from src.recommendation.top3_selector import Top3Selector
 from src.integrations.polymarket_client import get_polymarket_client
+from src.integrations.sportsbook_links import generate_bet_link, generate_all_book_links
+from src.integrations.polymarket_sports import fetch_polymarket_sports_markets, search_polymarket_markets
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -123,7 +125,18 @@ async def get_top3_bets(
         selector = Top3Selector(ensemble)
         
         recommendations = selector.get_top3_bets(db, sport=sport)
-        
+
+        # Enrich each recommendation with sportsbook deep links
+        for rec in recommendations:
+            bet_link = generate_bet_link(
+                bookmaker=rec.get('bookmaker', ''),
+                home_team=rec.get('event_name', '').split(' vs ')[0] if ' vs ' in rec.get('event_name', '') else '',
+                away_team=rec.get('event_name', '').split(' vs ')[-1] if ' vs ' in rec.get('event_name', '') else '',
+                sport=rec.get('sport', ''),
+                event_name=rec.get('event_name', ''),
+            )
+            rec['bet_link'] = bet_link
+
         return {
             "recommendations": recommendations,
             "generated_at": datetime.utcnow().isoformat(),
@@ -440,6 +453,28 @@ async def get_betting_stats(db: Session = Depends(get_db_session)):
         
     except Exception as e:
         logger.error(f"Error getting betting stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/polymarket/markets")
+async def get_polymarket_sports_markets(query: Optional[str] = None):
+    """
+    Get active sports prediction markets on Polymarket.
+    These are futures/outright markets (e.g. NBA Champion, EPL Winner).
+    """
+    try:
+        if query:
+            markets = search_polymarket_markets(query)
+        else:
+            markets = fetch_polymarket_sports_markets()
+        return {
+            "markets": markets,
+            "count": len(markets),
+            "source": "polymarket",
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+    except Exception as e:
+        logger.error(f"Error fetching Polymarket markets: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

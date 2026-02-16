@@ -1,5 +1,5 @@
 import React from 'react';
-import { TrendingUp, Target, DollarSign, AlertCircle, CheckCircle, Clock } from 'lucide-react';
+import { TrendingUp, Target, DollarSign, AlertCircle, CheckCircle, Clock, ExternalLink } from 'lucide-react';
 import { format } from 'date-fns';
 
 const BetCard = ({ bet, rank, onPlaceBet, placingBet = false }) => {
@@ -16,7 +16,8 @@ const BetCard = ({ bet, rank, onPlaceBet, placingBet = false }) => {
     probability,
     recommended_stake,
     recommended_stake_percentage,
-    rationale
+    rationale,
+    bet_link
   } = bet;
 
   const getConfidenceColor = (score) => {
@@ -127,9 +128,10 @@ const BetCard = ({ bet, rank, onPlaceBet, placingBet = false }) => {
           <button
             onClick={() => onPlaceBet(bet)}
             disabled={placingBet}
-            className="btn btn-primary px-6 py-3 text-lg font-bold shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all disabled:opacity-60"
+            className="btn btn-primary px-6 py-3 text-lg font-bold shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all disabled:opacity-60 flex items-center gap-2"
           >
-            {placingBet ? 'Placing...' : 'Place Bet'}
+            <ExternalLink className="w-5 h-5" />
+            {placingBet ? 'Opening...' : bet_link?.bookmaker_display ? `Bet at ${bet_link.bookmaker_display}` : 'Place Bet'}
           </button>
         </div>
       </div>

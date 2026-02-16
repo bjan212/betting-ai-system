@@ -113,6 +113,13 @@ export const bettingAPI = {
     const response = await api.get('/api/v1/betting/polymarket/balance');
     return response.data;
   },
+
+  // Get Polymarket sports futures markets
+  getPolymarketSports: async (query = null) => {
+    const params = query ? { query } : {};
+    const response = await api.get('/api/v1/betting/polymarket/markets', { params });
+    return response.data;
+  },
 };
 
 // Crypto API
