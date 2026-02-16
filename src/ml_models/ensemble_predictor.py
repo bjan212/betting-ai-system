@@ -1,8 +1,12 @@
 """
 Ensemble ML Predictor - Combines multiple models for robust predictions
 """
+from __future__ import annotations
 from typing import Dict, List, Any, Tuple
-import numpy as np
+try:
+    import numpy as np
+except ImportError:
+    np = None
 from datetime import datetime
 
 from src.utils.logger import get_logger

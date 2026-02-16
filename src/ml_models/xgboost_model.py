@@ -1,11 +1,19 @@
 """
 XGBoost Model for betting predictions
 """
-import numpy as np
-import pandas as pd
+from __future__ import annotations
+try:
+    import numpy as np
+    import pandas as pd
+    import xgboost as xgb
+    from sklearn.model_selection import train_test_split
+    HAS_ML = True
+except ImportError:
+    np = None
+    pd = None
+    xgb = None
+    HAS_ML = False
 from typing import Dict, Any, List
-import xgboost as xgb
-from sklearn.model_selection import train_test_split
 from datetime import datetime
 import pickle
 from pathlib import Path

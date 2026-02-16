@@ -4,9 +4,14 @@ Built on Polygon blockchain (Chain ID 137) using USDC
 """
 from typing import Dict, Any, List, Optional
 from datetime import datetime
-from py_clob_client.client import ClobClient
-from py_clob_client.clob_types import OrderArgs, MarketOrderArgs, OrderType, OpenOrderParams, BookParams
-from py_clob_client.order_builder.constants import BUY, SELL
+try:
+    from py_clob_client.client import ClobClient
+    from py_clob_client.clob_types import OrderArgs, MarketOrderArgs, OrderType, OpenOrderParams, BookParams
+    from py_clob_client.order_builder.constants import BUY, SELL
+    HAS_CLOB = True
+except ImportError:
+    HAS_CLOB = False
+    ClobClient = None
 
 from src.utils.logger import get_logger, betting_logger
 from src.utils.config_loader import get_config

@@ -4,15 +4,18 @@ uvicorn[standard]==0.27.0
 pydantic==2.5.3
 pydantic-settings==2.1.0
 
-# Machine Learning (lightweight)
+# Machine Learning & Data Science
 scikit-learn==1.4.0
 xgboost==2.0.3
 pandas==2.2.0
 numpy==1.26.3
 scipy==1.12.0
+tensorflow==2.15.0
+torch==2.1.2
 bayesian-optimization==1.4.3
 
 # Database
+psycopg2-binary==2.9.9
 sqlalchemy==2.0.25
 alembic==1.13.1
 
@@ -41,12 +44,12 @@ pyyaml==6.0.1
 python-json-logger==2.0.7
 schedule==1.2.0
 
-# Monitoring
+# Testing
+pytest==7.4.4
+pytest-asyncio==0.23.3
+pytest-cov==4.1.0
+faker==22.0.0
+
+# Monitoring & Logging
 prometheus-client==0.19.0
 sentry-sdk==1.39.2
-
-# Polymarket
-py-clob-client==0.34.5
-
-# gunicorn for production
-gunicorn==21.2.0

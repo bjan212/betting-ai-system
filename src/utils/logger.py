@@ -38,27 +38,31 @@ def get_logger(name: str, log_level: str = "INFO") -> logging.Logger:
     )
     console_handler.setFormatter(console_formatter)
     
-    # File handler with JSON formatting
-    log_dir = Path("logs")
-    log_dir.mkdir(exist_ok=True)
+    # File handler with JSON formatting (skip on serverless/read-only filesystems)
+    try:
+        log_dir = Path("logs")
+        log_dir.mkdir(exist_ok=True)
+        
+        file_handler = RotatingFileHandler(
+            log_dir / "betting_ai.log",
+            maxBytes=10 * 1024 * 1024,  # 10MB
+            backupCount=5
+        )
+        file_handler.setLevel(logging.INFO)
     
-    file_handler = RotatingFileHandler(
-        log_dir / "betting_ai.log",
-        maxBytes=10 * 1024 * 1024,  # 10MB
-        backupCount=5
-    )
-    file_handler.setLevel(logging.INFO)
-    
-    # JSON formatter for structured logging
-    json_formatter = jsonlogger.JsonFormatter(
-        '%(asctime)s %(name)s %(levelname)s %(message)s',
-        timestamp=True
-    )
-    file_handler.setFormatter(json_formatter)
-    
-    # Add handlers
-    logger.addHandler(console_handler)
-    logger.addHandler(file_handler)
+        # JSON formatter for structured logging
+        json_formatter = jsonlogger.JsonFormatter(
+            '%(asctime)s %(name)s %(levelname)s %(message)s',
+            timestamp=True
+        )
+        file_handler.setFormatter(json_formatter)
+        
+        # Add handlers
+        logger.addHandler(console_handler)
+        logger.addHandler(file_handler)
+    except (OSError, PermissionError):
+        # Serverless / read-only filesystem — console only
+        logger.addHandler(console_handler)
     
     return logger
 
@@ -69,20 +73,24 @@ class BettingLogger:
     def __init__(self, name: str = "betting"):
         self.logger = get_logger(name)
         
-        # Create separate log file for betting operations
-        log_dir = Path("logs")
-        betting_handler = RotatingFileHandler(
-            log_dir / "betting_operations.log",
-            maxBytes=10 * 1024 * 1024,
-            backupCount=10
-        )
-        
-        json_formatter = jsonlogger.JsonFormatter(
-            '%(asctime)s %(name)s %(levelname)s %(message)s',
-            timestamp=True
-        )
-        betting_handler.setFormatter(json_formatter)
-        self.logger.addHandler(betting_handler)
+        # Create separate log file for betting operations (skip on serverless)
+        try:
+            log_dir = Path("logs")
+            log_dir.mkdir(exist_ok=True)
+            betting_handler = RotatingFileHandler(
+                log_dir / "betting_operations.log",
+                maxBytes=10 * 1024 * 1024,
+                backupCount=10
+            )
+            
+            json_formatter = jsonlogger.JsonFormatter(
+                '%(asctime)s %(name)s %(levelname)s %(message)s',
+                timestamp=True
+            )
+            betting_handler.setFormatter(json_formatter)
+            self.logger.addHandler(betting_handler)
+        except (OSError, PermissionError):
+            pass  # Serverless / read-only filesystem
     
     def log_prediction(self, event_id: int, model_name: str, prediction: dict):
         """Log prediction details"""

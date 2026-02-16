@@ -1,10 +1,14 @@
 """
 Top 3 Bet Selector - Identifies the best 3 betting opportunities
 """
+from __future__ import annotations
 from typing import List, Dict, Any, Tuple
 import os
 from datetime import datetime, timedelta
-import numpy as np
+try:
+    import numpy as np
+except ImportError:
+    np = None
 from sqlalchemy.orm import Session
 
 from src.database.models import Event, Odds, Recommendation
@@ -408,7 +412,8 @@ class Top3Selector:
         # Model consensus
         individual_confidences = prediction.get('individual_confidences', {})
         if len(individual_confidences) >= 3:
-            avg_confidence = np.mean(list(individual_confidences.values()))
+            vals = list(individual_confidences.values())
+            avg_confidence = np.mean(vals) if np else (sum(vals) / len(vals))
             if avg_confidence > 0.7:
                 reasons.append("Strong consensus across all models")
         

@@ -5,7 +5,10 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 
-from src.integrations.crypto_wallet import get_crypto_wallet
+try:
+    from src.integrations.crypto_wallet import get_crypto_wallet
+except ImportError:
+    get_crypto_wallet = None
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)

@@ -36,16 +36,27 @@ class DatabaseManager:
             'postgresql://betting_user:changeme@localhost:5432/betting_ai_db'
         )
         
-        # Create engine with connection pooling
-        self.engine = create_engine(
-            self.database_url,
-            poolclass=QueuePool,
-            pool_size=pool_size,
-            max_overflow=max_overflow,
-            pool_pre_ping=True,  # Verify connections before using
-            echo=False,
-            future=True
-        )
+        # Create engine - use StaticPool for SQLite (required for serverless)
+        is_sqlite = self.database_url.startswith('sqlite')
+        if is_sqlite:
+            from sqlalchemy.pool import StaticPool
+            self.engine = create_engine(
+                self.database_url,
+                connect_args={"check_same_thread": False},
+                poolclass=StaticPool,
+                echo=False,
+                future=True
+            )
+        else:
+            self.engine = create_engine(
+                self.database_url,
+                poolclass=QueuePool,
+                pool_size=pool_size,
+                max_overflow=max_overflow,
+                pool_pre_ping=True,
+                echo=False,
+                future=True
+            )
         
         # Create session factory
         self.SessionLocal = sessionmaker(

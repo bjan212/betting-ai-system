@@ -3,8 +3,12 @@ Cryptocurrency Wallet Integration for BSC (Binance Smart Chain)
 """
 from typing import Dict, Any, Optional
 from decimal import Decimal
-from web3 import Web3
-from eth_account import Account
+try:
+    from web3 import Web3
+    from eth_account import Account
+    HAS_WEB3 = True
+except ImportError:
+    HAS_WEB3 = False
 import json
 
 from src.utils.logger import get_logger, betting_logger
