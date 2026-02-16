@@ -82,10 +82,10 @@ ml_models:
 
 recommendation:
   top3_selection:
-    min_confidence: "${MIN_CONFIDENCE_THRESHOLD:0.8}"
-    min_expected_value: "${MIN_EXPECTED_VALUE:1.1}"
-    max_risk_score: "${MAX_RISK_SCORE:0.7}"
-    time_window_hours: "${TIME_WINDOW_HOURS:24}"
+    min_confidence: "${MIN_CONFIDENCE_THRESHOLD:0.3}"
+    min_expected_value: "${MIN_EXPECTED_VALUE:1.0}"
+    max_risk_score: "${MAX_RISK_SCORE:0.85}"
+    time_window_hours: "${TIME_WINDOW_HOURS:168}"
     
   scoring:
     confidence_weight: 0.4

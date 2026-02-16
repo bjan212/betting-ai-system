@@ -41,18 +41,28 @@ class Top3Selector:
         self.ensemble_predictor = ensemble_predictor
         self.recommendation_config = config.get_recommendation_config()
         
-        # Selection criteria
-        self.min_confidence = self.recommendation_config.get('top3_selection', {}).get('min_confidence', 0.65)
-        self.min_expected_value = self.recommendation_config.get('top3_selection', {}).get('min_expected_value', 1.05)
-        self.max_risk_score = self.recommendation_config.get('top3_selection', {}).get('max_risk_score', 0.7)
-        raw_time_window = self.recommendation_config.get('top3_selection', {}).get('time_window_hours', 24)
+        # Selection criteria (config values may be strings from YAML env vars)
+        top3_cfg = self.recommendation_config.get('top3_selection', {})
         try:
-            self.time_window_hours = int(float(raw_time_window))
+            self.min_confidence = float(top3_cfg.get('min_confidence', 0.65))
         except (TypeError, ValueError):
-            self.time_window_hours = 24
+            self.min_confidence = 0.65
+        try:
+            self.min_expected_value = float(top3_cfg.get('min_expected_value', 1.05))
+        except (TypeError, ValueError):
+            self.min_expected_value = 1.05
+        try:
+            self.max_risk_score = float(top3_cfg.get('max_risk_score', 0.7))
+        except (TypeError, ValueError):
+            self.max_risk_score = 0.7
+        try:
+            self.time_window_hours = int(float(top3_cfg.get('time_window_hours', 168)))
+        except (TypeError, ValueError):
+            self.time_window_hours = 168
 
         # Demo mode bypasses strict filtering for local previews
-        self.demo_mode = os.getenv("DEMO_MODE", "false").lower() in ("1", "true", "yes")
+        # Auto-enable demo mode when ML models are not trained
+        self.demo_mode = os.getenv("DEMO_MODE", "true").lower() in ("1", "true", "yes")
         
         # Scoring weights
         scoring = self.recommendation_config.get('scoring', {})

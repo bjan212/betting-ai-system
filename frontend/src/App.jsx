@@ -97,10 +97,23 @@ function App() {
       setPolymarketBalanceError(null);
       const data = await bettingAPI.getPolymarketBalance();
       setPolymarketBalance(data);
-      setPolymarketStatus({
-        type: 'success',
-        message: data.message || 'Polymarket connected'
-      });
+      if (data.connected) {
+        setPolymarketStatus({
+          type: 'success',
+          message: data.message || 'Polymarket connected'
+        });
+      } else if (data.credentials_saved) {
+        // API unreachable but credentials are saved (e.g. US geo-restriction)
+        setPolymarketStatus({
+          type: 'warning',
+          message: data.message || 'Credentials saved. Polymarket API unreachable (US geo-restriction). Use VPN for live access.'
+        });
+      } else {
+        setPolymarketStatus({
+          type: 'error',
+          message: data.message || 'Polymarket connection failed'
+        });
+      }
     } catch (err) {
       setPolymarketBalance(null);
       setPolymarketBalanceError(err.response?.data?.detail || 'Failed to fetch Polymarket balance');
@@ -155,14 +168,24 @@ function App() {
   const handleSavePolymarketSettings = async () => {
     try {
       setSavingPolymarketSettings(true);
-      await bettingAPI.updatePolymarketConfig({
+      const result = await bettingAPI.updatePolymarketConfig({
         privateKey: polymarketConfig.privateKey,
         funderAddress: polymarketConfig.funderAddress || null,
         signatureType: polymarketConfig.signatureType,
       });
       localStorage.setItem('polymarket_config', JSON.stringify(polymarketConfig));
-      await fetchPolymarketBalance();
-      setShowPolymarketSettings(false);
+
+      if (result.warning) {
+        // API unreachable (e.g. US geo-restriction) but credentials saved
+        setPolymarketStatus({
+          type: 'warning',
+          message: result.warning
+        });
+        setShowPolymarketSettings(false);
+      } else {
+        await fetchPolymarketBalance();
+        setShowPolymarketSettings(false);
+      }
     } catch (err) {
       setPolymarketStatus({
         type: 'error',
@@ -262,6 +285,8 @@ function App() {
             className={`mb-6 rounded-lg border px-4 py-3 text-sm ${
               polymarketStatus.type === 'success'
                 ? 'bg-success-50 border-success-200 text-success-700'
+                : polymarketStatus.type === 'warning'
+                ? 'bg-yellow-50 border-yellow-200 text-yellow-700'
                 : 'bg-danger-50 border-danger-200 text-danger-700'
             }`}
           >

@@ -164,7 +164,18 @@ async def update_polymarket_config(request: PolymarketConfigRequest):
             signature_type=request.signature_type
         )
 
-        return {"success": True}
+        # Credentials are saved even if the API is unreachable (e.g. US geo-block)
+        result = {"success": True, "credentials_saved": True}
+        if client._api_reachable is False:
+            result["warning"] = (
+                "Credentials saved but Polymarket API is currently unreachable. "
+                "This is often due to US geo-restrictions. "
+                "Your credentials will work when accessed from an allowed region or via VPN."
+            )
+            result["api_reachable"] = False
+        else:
+            result["api_reachable"] = True
+        return result
 
     except Exception as e:
         logger.error(f"Error updating Polymarket config: {e}")
@@ -185,6 +196,7 @@ async def get_polymarket_balance():
             return {
                 "connected": False,
                 "message": connection.get('error', 'Connection failed'),
+                "credentials_saved": connection.get('credentials_saved', False),
                 "raw": connection
             }
         

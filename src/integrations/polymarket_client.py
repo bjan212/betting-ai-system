@@ -28,12 +28,12 @@ class PolymarketClient:
     
     def __init__(self):
         """Initialize Polymarket client"""
-        polymarket_config = config.get_betting_platform_config('polymarket', {
+        polymarket_config = config.get_betting_platform_config('polymarket') or {
             'host': 'https://clob.polymarket.com',
             'chain_id': 137,  # Polygon mainnet
             'signature_type': 0,  # 0 for EOA (private key), 1 for Magic/email, 2 for proxy
             'default_currency': 'USDC'
-        })
+        }
         
         self.host = polymarket_config.get('host', 'https://clob.polymarket.com')
         self.chain_id = polymarket_config.get('chain_id', 137)
@@ -50,6 +50,8 @@ class PolymarketClient:
     
     def _initialize_client(self):
         """Initialize or reinitialize the CLOB client"""
+        self._api_reachable = None  # unknown until checked
+        self._init_error = None
         try:
             if self.private_key:
                 # Authenticated client
@@ -60,17 +62,28 @@ class PolymarketClient:
                     signature_type=self.signature_type,
                     funder=self.funder_address
                 )
-                # Generate API credentials
-                self.client.set_api_creds(self.client.create_or_derive_api_creds())
-                logger.info("Polymarket client authenticated with private key")
+                # Generate API credentials - this calls the remote API
+                try:
+                    self.client.set_api_creds(self.client.create_or_derive_api_creds())
+                    self._api_reachable = True
+                    logger.info("Polymarket client authenticated with private key")
+                except Exception as cred_err:
+                    self._init_error = str(cred_err)
+                    self._api_reachable = False
+                    logger.warning(f"Polymarket API unreachable during auth (credentials saved locally): {cred_err}")
             else:
                 # Read-only client (no authentication)
                 self.client = ClobClient(self.host)
                 logger.info("Polymarket client initialized in read-only mode")
         except Exception as e:
             logger.error(f"Error initializing Polymarket client: {e}")
+            self._init_error = str(e)
+            self._api_reachable = False
             # Fall back to read-only
-            self.client = ClobClient(self.host)
+            try:
+                self.client = ClobClient(self.host)
+            except Exception:
+                self.client = None
     
     async def update_credentials(
         self,
@@ -103,12 +116,18 @@ class PolymarketClient:
         Returns:
             Dictionary with connection status
         """
+        if self.client is None:
+            return {
+                "error": "Polymarket client not initialized",
+                "connected": False
+            }
         try:
             # Test with a simple read-only call
             ok = self.client.get_ok()
             server_time = self.client.get_server_time()
             
             if ok and server_time:
+                self._api_reachable = True
                 logger.info("Polymarket connection successful")
                 return {
                     "connected": True, 
@@ -121,11 +140,22 @@ class PolymarketClient:
                     "connected": False
                 }
         except Exception as e:
-            error_msg = f"Error checking Polymarket connection: {str(e)}"
-            logger.error(error_msg)
+            err_str = str(e)
+            # Detect network-level blocks (US geo-restriction, TLS reset, etc.)
+            if 'Request exception' in err_str or 'Connection reset' in err_str:
+                error_msg = (
+                    "Cannot reach Polymarket API. This is likely due to US geo-restrictions. "
+                    "Polymarket blocks connections from US IP addresses. "
+                    "Your wallet credentials have been saved and will work when accessed from an allowed region or via VPN."
+                )
+            else:
+                error_msg = f"Polymarket connection error: {err_str}"
+            logger.warning(error_msg)
+            self._api_reachable = False
             return {
                 "error": error_msg,
-                "connected": False
+                "connected": False,
+                "credentials_saved": self.private_key is not None
             }
     
     async def get_balance(self) -> Dict[str, Any]:
