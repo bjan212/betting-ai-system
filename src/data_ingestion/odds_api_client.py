@@ -36,10 +36,32 @@ class OddsAPIClient:
             timeout=self.timeout,
             headers={'User-Agent': 'BettingAI/1.0'}
         )
+
+        # Track remaining API credits (updated after each /odds call)
+        self.credits_remaining: Optional[int] = None
         
-        # Sport mappings
+        # Sport group prefixes → canonical sport name
+        # The Odds API keys follow the pattern: <group>_<league>
+        self.sport_group_map = {
+            'soccer': 'soccer',
+            'americanfootball': 'football',
+            'basketball': 'basketball',
+            'baseball': 'baseball',
+            'icehockey': 'ice_hockey',
+            'mma': 'mma',
+            'tennis': 'tennis',
+            'cricket': 'cricket',
+            'boxing': 'boxing',
+            'rugbyleague': 'rugby_league',
+            'rugbyunion': 'rugby_union',
+            'aussierules': 'aussie_rules',
+            'handball': 'handball',
+            'lacrosse': 'lacrosse',
+        }
+
+        # Legacy single-key mapping (kept for backward compat)
         self.sport_keys = {
-            'soccer': 'soccer_epl',  # English Premier League
+            'soccer': 'soccer_epl',
             'football': 'americanfootball_nfl',
             'basketball': 'basketball_nba',
             'baseball': 'baseball_mlb',
@@ -49,11 +71,12 @@ class OddsAPIClient:
             'cricket': 'cricket_test_match'
         }
         
-        # Supported regions
-        self.regions = ['us', 'uk', 'eu', 'au']
+        # Supported regions (use 'us' only by default to save API credits;
+        # each extra region costs an additional request)
+        self.regions = ['us']
         
-        # Supported markets
-        self.markets = ['h2h', 'spreads', 'totals']  # head-to-head, spreads, over/under
+        # Supported markets (h2h only by default; each extra market adds cost)
+        self.markets = ['h2h']
         
         # Bookmakers to track
         self.bookmakers = [
@@ -153,11 +176,16 @@ class OddsAPIClient:
             # Log remaining requests
             remaining = response.headers.get('x-requests-remaining')
             used = response.headers.get('x-requests-used')
-            logger.info(f"Retrieved {len(events)} events. API requests: {used} used, {remaining} remaining")
+            self.credits_remaining = int(remaining) if remaining else None
+            logger.info(f"Retrieved {len(events)} events. API credits: {used} used, {remaining} remaining")
             
             return events
             
         except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401 and 'OUT_OF_USAGE_CREDITS' in e.response.text:
+                self.credits_remaining = 0
+                logger.error("Odds API credits exhausted — upgrade plan at https://the-odds-api.com")
+                raise  # Let caller stop the fetch loop
             logger.error(f"HTTP error fetching odds: {e.response.status_code} - {e.response.text}")
             return []
         except Exception as e:

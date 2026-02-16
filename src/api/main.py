@@ -123,14 +123,23 @@ def _seed_demo_data_if_empty():
 
 
 async def _try_fetch_live_odds():
-    """Attempt one-shot live odds fetch in the background (non-blocking)."""
+    """Attempt one-shot live odds fetch. Returns True if events were stored."""
     try:
         from src.data_ingestion.odds_ingestion_service import OddsIngestionService
         service = OddsIngestionService()
         await service.fetch_and_store_odds()
         logger.info("Live odds fetch completed")
+
+        # Check if we actually got events
+        from src.database.database import db_manager
+        from src.database.models import Event
+        with db_manager.get_session() as db:
+            count = db.query(Event).count()
+            logger.info(f"Database now has {count} events after live fetch")
+            return count > 0
     except Exception as e:
-        logger.warning(f"Live odds fetch skipped: {e}")
+        logger.warning(f"Live odds fetch failed: {e}")
+        return False
 
 
 @asynccontextmanager
@@ -141,12 +150,12 @@ async def lifespan(app: FastAPI):
     init_database()
     logger.info("Database initialized")
 
-    # Auto-seed demo data if DB is empty (fresh deploy)
-    _seed_demo_data_if_empty()
+    # Try fetching live odds first (await it so we have data before serving)
+    live_success = await _try_fetch_live_odds()
 
-    # Try fetching live odds (best-effort, won't block startup)
-    import asyncio
-    asyncio.create_task(_try_fetch_live_odds())
+    # Fall back to demo seed only if live fetch got nothing
+    if not live_success:
+        _seed_demo_data_if_empty()
     
     yield
     

@@ -427,3 +427,28 @@ async def get_betting_stats(db: Session = Depends(get_db_session)):
     except Exception as e:
         logger.error(f"Error getting betting stats: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/refresh-odds")
+async def refresh_odds():
+    """Trigger a live odds refresh from The Odds API"""
+    try:
+        from src.data_ingestion.odds_ingestion_service import OddsIngestionService
+        from src.database.models import Event
+
+        service = OddsIngestionService()
+        await service.fetch_and_store_odds()
+
+        from src.database.database import db_manager
+        with db_manager.get_session() as db:
+            event_count = db.query(Event).count()
+
+        return {
+            "success": True,
+            "message": f"Live odds refreshed — {event_count} events in database",
+            "event_count": event_count,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+    except Exception as e:
+        logger.error(f"Error refreshing odds: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

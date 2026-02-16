@@ -2,6 +2,8 @@
 Odds Ingestion Service - Continuously fetches and stores odds data
 """
 import asyncio
+import os
+import httpx
 from typing import List, Dict, Any
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
@@ -40,6 +42,32 @@ class OddsIngestionService:
             'mma',
             'tennis'
         ]
+
+        # Priority league keys — fetched first to maximize value from limited
+        # API credits.  Leagues not on this list are still fetched if credits
+        # remain. Order matters: most popular first.
+        self.priority_leagues = [
+            'basketball_nba',
+            'americanfootball_nfl',
+            'soccer_epl',
+            'soccer_usa_mls',
+            'basketball_ncaab',
+            'icehockey_nhl',
+            'baseball_mlb',
+            'mma_mixed_martial_arts',
+            'soccer_spain_la_liga',
+            'soccer_germany_bundesliga',
+            'soccer_italy_serie_a',
+            'soccer_france_ligue_one',
+            'americanfootball_ncaaf',
+            'tennis_atp_french_open',
+            'tennis_atp_us_open',
+            'tennis_atp_wimbledon',
+            'tennis_atp_australian_open',
+        ]
+
+        # Maximum number of league API calls per fetch cycle (saves credits)
+        self.max_leagues_per_fetch = int(os.getenv('MAX_LEAGUES_PER_FETCH', '10'))
         
         logger.info(f"Odds ingestion service initialized (interval: {update_interval}s)")
     
@@ -62,55 +90,102 @@ class OddsIngestionService:
         logger.info("Stopping odds ingestion service")
     
     async def fetch_and_store_odds(self):
-        """Fetch odds for all tracked sports and store in database"""
-        logger.info("Fetching odds data...")
+        """Fetch odds for active leagues, prioritising popular ones and respecting credit limits."""
+        logger.info("Fetching live odds data...")
 
         available_sports = await self.odds_client.get_sports()
-        available_keys = {sport.get('key') for sport in available_sports if sport.get('key')}
+        active_keys_set = {
+            s['key'] for s in available_sports
+            if s.get('active') and not s.get('has_outrights')
+        }
 
-        for sport in self.tracked_sports:
+        # Build reverse map: API key → canonical sport name
+        group_map = self.odds_client.sport_group_map
+        key_to_sport: dict[str, str] = {}
+        for s in available_sports:
+            if not s.get('active') or s.get('has_outrights'):
+                continue
+            key = s['key']
+            prefix = key.split('_')[0]
+            canonical = group_map.get(prefix)
+            if canonical and canonical in self.tracked_sports:
+                key_to_sport[key] = canonical
+
+        # Order: priority leagues first (maintaining order), then the rest
+        ordered_keys: list[str] = []
+        seen = set()
+        for pk in self.priority_leagues:
+            if pk in key_to_sport and pk not in seen:
+                ordered_keys.append(pk)
+                seen.add(pk)
+        for k in sorted(key_to_sport.keys()):
+            if k not in seen:
+                ordered_keys.append(k)
+                seen.add(k)
+
+        # Cap the number of API calls
+        fetch_limit = self.max_leagues_per_fetch
+        ordered_keys = ordered_keys[:fetch_limit]
+
+        logger.info(f"Will fetch odds for {len(ordered_keys)} leagues (limit {fetch_limit}): {ordered_keys}")
+
+        total_events = 0
+        for league_key in ordered_keys:
+            sport_name = key_to_sport[league_key]
             try:
-                sport_key = self.odds_client.sport_keys.get(sport.lower(), sport)
-                if sport_key not in available_keys:
-                    logger.warning(f"Skipping unsupported sport key: {sport_key}")
-                    continue
-
-                await self.process_sport(sport)
+                count = await self.process_sport_key(sport_name, league_key)
+                total_events += count
             except Exception as e:
-                logger.error(f"Error processing sport {sport}: {e}")
-        
-        logger.info("Odds data fetch complete")
+                if 'OUT_OF_USAGE_CREDITS' in str(e):
+                    logger.warning("API credits exhausted — stopping fetch loop early")
+                    break
+                logger.error(f"Error processing {league_key}: {e}")
+
+        logger.info(f"Live odds fetch complete — {total_events} events across {len(ordered_keys)} leagues")
     
     async def process_sport(self, sport: str):
+        """Legacy: process a single mapped sport key."""
+        sport_key = self.odds_client.sport_keys.get(sport.lower(), sport)
+        await self.process_sport_key(sport, sport_key)
+
+    async def process_sport_key(self, sport_name: str, league_key: str) -> int:
         """
-        Process odds for a specific sport
-        
+        Fetch and store odds for one league key.
+
         Args:
-            sport: Sport name
+            sport_name: Canonical sport name (e.g. 'soccer')
+            league_key: Odds API sport key (e.g. 'soccer_epl')
+
+        Returns:
+            Number of events processed
         """
         try:
-            # Get odds for next 7 days
             commence_time_from = datetime.utcnow()
             commence_time_to = commence_time_from + timedelta(days=7)
-            
+
             events = await self.odds_client.get_odds(
-                sport=sport,
+                sport=league_key,   # pass the full API key directly
                 commence_time_from=commence_time_from,
                 commence_time_to=commence_time_to
             )
-            
+
             if not events:
-                logger.debug(f"No events found for {sport}")
-                return
-            
-            logger.info(f"Processing {len(events)} events for {sport}")
-            
+                logger.debug(f"No events found for {league_key}")
+                return 0
+
+            logger.info(f"Processing {len(events)} events for {league_key}")
+
             with db_manager.get_session() as db:
                 for event_data in events:
-                    self.store_event_and_odds(db, event_data, sport)
-            
+                    self.store_event_and_odds(db, event_data, sport_name)
+
+            return len(events)
+
+        except httpx.HTTPStatusError:
+            raise  # Propagate 401 etc. so the fetch loop can stop early
         except Exception as e:
-            logger.error(f"Error processing sport {sport}: {e}")
+            logger.error(f"Error processing {league_key}: {e}")
+            return 0
     
     def store_event_and_odds(
         self,

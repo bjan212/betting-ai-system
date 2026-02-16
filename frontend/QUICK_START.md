@@ -26,7 +26,7 @@ bash START_BACKEND.sh
 ### Step 3: Verify Backend is Running
 Open a new terminal and test:
 ```bash
-curl http://localhost:8000/health
+curl http://localhost:8000/healthcurl http://localhost:8000/health§
 ```
 
 Expected response:
