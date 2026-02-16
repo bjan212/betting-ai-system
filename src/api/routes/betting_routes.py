@@ -61,6 +61,15 @@ class PlaceBetRequest(BaseModel):
     size: Optional[float] = None  # Share size for limit order
 
 
+class DirectBetRequest(BaseModel):
+    """Direct bet request — uses tiered stake based on probability"""
+    token_id: str           # Polymarket CLOB token ID
+    outcome: str            # e.g. "Yes" or "No"
+    market_price: float     # Current market price (0.01 – 0.99)
+    question: str = ""      # Market question (for logging)
+    side: str = "BUY"       # BUY or SELL
+
+
 class PolymarketConfigRequest(BaseModel):
     """Polymarket API configuration request model"""
     private_key: str  # Polygon wallet private key
@@ -175,6 +184,85 @@ async def place_bet(request: PlaceBetRequest):
         raise
     except Exception as e:
         logger.error(f"Error placing bet: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Tiered stake amounts matching the recommendation engine
+STAKE_TIERS = [
+    (0.60, 0.70, 1.0),   # 60-70% → $1
+    (0.70, 0.80, 3.0),   # 70-80% → $3
+    (0.80, 0.90, 5.0),   # 80-90% → $5
+    (0.90, 1.00, 22.0),  # 90-99% → $22
+]
+
+
+def _tiered_stake(probability: float) -> float:
+    """Return the tiered stake amount for a given probability."""
+    for low, high, amount in STAKE_TIERS:
+        if low <= probability < high:
+            return amount
+    if probability >= 1.0:
+        return 22.0
+    return 0.0
+
+
+@router.post("/direct-bet")
+async def direct_bet(request: DirectBetRequest):
+    """
+    Place a bet directly on Polymarket using tiered stake sizing.
+
+    The stake is determined automatically by the market price (treated as
+    probability):
+        60-70%  → $1
+        70-80%  → $3
+        80-90%  → $5
+        90-99%  → $22
+    """
+    try:
+        client = get_polymarket_client()
+        if not client.private_key:
+            raise HTTPException(
+                status_code=400,
+                detail="Polymarket wallet not configured. Go to Settings → Polymarket Settings to add your key.",
+            )
+
+        probability = request.market_price
+        stake = _tiered_stake(probability)
+        if stake <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Market price {probability:.0%} is below the 60% minimum threshold for auto-betting.",
+            )
+
+        # Place a market order (Fill-or-Kill) for the tiered dollar amount
+        result = await client.place_bet(
+            token_id=request.token_id,
+            side=request.side,
+            amount=stake,
+        )
+
+        if not result.get("success"):
+            raise HTTPException(status_code=502, detail=result.get("error", "Order rejected by Polymarket"))
+
+        tier_label = f"{int(probability*100)}%"
+        for low, high, _ in STAKE_TIERS:
+            if low <= probability < high:
+                tier_label = f"{int(low*100)}-{int(high*100)}%"
+                break
+
+        return {
+            **result,
+            "stake": stake,
+            "tier": tier_label,
+            "probability": probability,
+            "outcome": request.outcome,
+            "question": request.question,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error placing direct bet: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

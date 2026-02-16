@@ -120,6 +120,18 @@ export const bettingAPI = {
     const response = await api.get('/api/v1/betting/polymarket/markets', { params });
     return response.data;
   },
+
+  // Place a direct bet on Polymarket (tiered stake)
+  directBet: async ({ tokenId, outcome, marketPrice, question, side = 'BUY' }) => {
+    const response = await api.post('/api/v1/betting/direct-bet', {
+      token_id: tokenId,
+      outcome,
+      market_price: marketPrice,
+      question,
+      side,
+    });
+    return response.data;
+  },
 };
 
 // Crypto API

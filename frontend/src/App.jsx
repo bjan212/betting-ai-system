@@ -140,9 +140,38 @@ function App() {
     return () => clearInterval(interval);
   }, [autoRefresh]);
 
-  // Handle place bet
+  // Tiered stake calculation (mirrors backend)
+  const getTieredStake = (probability) => {
+    if (probability >= 0.90) return { amount: 22, tier: '90-99%' };
+    if (probability >= 0.80) return { amount: 5, tier: '80-90%' };
+    if (probability >= 0.70) return { amount: 3, tier: '70-80%' };
+    if (probability >= 0.60) return { amount: 1, tier: '60-70%' };
+    return { amount: 0, tier: 'below threshold' };
+  };
+
+  // Handle place bet (for top-3 sportsbook recommendations)
   const handlePlaceBet = (bet) => {
-    setPendingBet(bet);
+    setPendingBet({ ...bet, _source: 'sportsbook' });
+    setShowBetConfirm(true);
+  };
+
+  // Handle place bet for Polymarket futures
+  const handlePlacePolymarketBet = (market, token) => {
+    const stake = getTieredStake(token.price);
+    setPendingBet({
+      _source: 'polymarket',
+      event_name: market.question,
+      selection: token.outcome,
+      recommended_odds: (1 / token.price).toFixed(2),
+      recommended_stake: stake.amount,
+      probability: token.price,
+      bookmaker: 'Polymarket',
+      token_id: token.token_id,
+      market_price: token.price,
+      question: market.question,
+      url: market.url,
+      tier: stake.tier,
+    });
     setShowBetConfirm(true);
   };
 
@@ -151,18 +180,37 @@ function App() {
 
     try {
       setPlacingBet(true);
-      // Open sportsbook in new tab
-      const url = pendingBet.bet_link?.search_url || pendingBet.bet_link?.base_url;
-      if (url) {
-        window.open(url, '_blank', 'noopener,noreferrer');
+
+      if (pendingBet._source === 'polymarket' && pendingBet.token_id) {
+        // Direct Polymarket placement via API
+        const result = await bettingAPI.directBet({
+          tokenId: pendingBet.token_id,
+          outcome: pendingBet.selection,
+          marketPrice: pendingBet.market_price,
+          question: pendingBet.question,
+        });
+        alert(
+          `Bet placed on Polymarket!\n` +
+          `Outcome: ${result.outcome}\n` +
+          `Stake: $${result.stake} (${result.tier} tier)\n` +
+          `Order ID: ${result.order_id || 'N/A'}`
+        );
       } else {
-        alert('No sportsbook link available for this bet.');
+        // Sportsbook redirect
+        const url = pendingBet.bet_link?.search_url || pendingBet.bet_link?.url;
+        if (url) {
+          window.open(url, '_blank', 'noopener,noreferrer');
+        } else {
+          alert('No sportsbook link available for this bet.');
+        }
       }
+
       setShowBetConfirm(false);
       setPendingBet(null);
     } catch (err) {
-      alert('Failed to open sportsbook link');
-      console.error('Error opening sportsbook:', err);
+      const detail = err.response?.data?.detail || 'Failed to place bet';
+      alert(detail);
+      console.error('Error placing bet:', err);
     } finally {
       setPlacingBet(false);
     }
@@ -441,7 +489,9 @@ function App() {
             <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-6">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-xl font-bold text-gray-900">
-                  {pendingBet.bet_link?.bookmaker_display
+                  {pendingBet._source === 'polymarket'
+                    ? 'Place Bet on Polymarket'
+                    : pendingBet.bet_link?.bookmaker_display
                     ? `Bet at ${pendingBet.bet_link.bookmaker_display}`
                     : 'Place Bet'}
                 </h3>
@@ -453,36 +503,69 @@ function App() {
                 </button>
               </div>
 
-              <p className="text-sm text-gray-500 mb-4">
-                You'll be redirected to{' '}
-                <strong>{pendingBet.bet_link?.bookmaker_display || pendingBet.bookmaker}</strong>{' '}
-                to place this bet. Review the details below:
-              </p>
+              {pendingBet._source === 'polymarket' ? (
+                <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 mb-4 text-sm text-purple-800">
+                  This will place a <strong>real market order</strong> on Polymarket using USDC from your connected wallet.
+                </div>
+              ) : (
+                <p className="text-sm text-gray-500 mb-4">
+                  You'll be redirected to{' '}
+                  <strong>{pendingBet.bet_link?.bookmaker_display || pendingBet.bookmaker}</strong>{' '}
+                  to place this bet.
+                </p>
+              )}
 
               <div className="space-y-3 text-sm text-gray-700">
                 <div className="flex items-center justify-between">
                   <span>Event</span>
-                  <span className="font-semibold text-gray-900">{pendingBet.event_name}</span>
+                  <span className="font-semibold text-gray-900 text-right max-w-[60%]">{pendingBet.event_name}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span>Selection</span>
                   <span className="font-semibold text-gray-900">{pendingBet.selection}</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span>Odds</span>
-                  <span className="font-semibold text-gray-900">{pendingBet.recommended_odds.toFixed(2)}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>Recommended Stake</span>
+                  <span>Probability</span>
                   <span className="font-semibold text-gray-900">
-                    ${pendingBet.recommended_stake.toFixed(2)}
+                    {((pendingBet.probability || 0) * 100).toFixed(1)}%
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span>Bookmaker</span>
-                  <span className="font-semibold text-primary-600">
-                    {pendingBet.bet_link?.bookmaker_display || pendingBet.bookmaker}
+                  <span>Tiered Stake</span>
+                  <span className="font-bold text-xl text-primary-600">
+                    ${pendingBet.recommended_stake?.toFixed(2)}
                   </span>
+                </div>
+                {pendingBet.tier && (
+                  <div className="flex items-center justify-between">
+                    <span>Stake Tier</span>
+                    <span className="badge badge-primary">{pendingBet.tier}</span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between">
+                  <span>Platform</span>
+                  <span className="font-semibold text-primary-600">
+                    {pendingBet._source === 'polymarket' ? 'Polymarket' : (pendingBet.bet_link?.bookmaker_display || pendingBet.bookmaker)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Stake tier reference */}
+              <div className="mt-4 p-3 bg-gray-50 rounded-lg">
+                <p className="text-xs font-medium text-gray-600 mb-2">Auto-Stake Tiers:</p>
+                <div className="grid grid-cols-4 gap-2 text-xs text-center">
+                  <div className={`p-1.5 rounded ${pendingBet.probability >= 0.60 && pendingBet.probability < 0.70 ? 'bg-primary-100 font-bold text-primary-700' : 'bg-white text-gray-600'}`}>
+                    60-70%<br/>$1
+                  </div>
+                  <div className={`p-1.5 rounded ${pendingBet.probability >= 0.70 && pendingBet.probability < 0.80 ? 'bg-primary-100 font-bold text-primary-700' : 'bg-white text-gray-600'}`}>
+                    70-80%<br/>$3
+                  </div>
+                  <div className={`p-1.5 rounded ${pendingBet.probability >= 0.80 && pendingBet.probability < 0.90 ? 'bg-primary-100 font-bold text-primary-700' : 'bg-white text-gray-600'}`}>
+                    80-90%<br/>$5
+                  </div>
+                  <div className={`p-1.5 rounded ${pendingBet.probability >= 0.90 ? 'bg-primary-100 font-bold text-primary-700' : 'bg-white text-gray-600'}`}>
+                    90-99%<br/>$22
+                  </div>
                 </div>
               </div>
 
@@ -498,10 +581,18 @@ function App() {
                   disabled={placingBet}
                   className="btn btn-primary flex items-center gap-2"
                 >
-                  <ExternalLink className="w-4 h-4" />
-                  {placingBet
-                    ? 'Opening...'
-                    : `Go to ${pendingBet.bet_link?.bookmaker_display || 'Sportsbook'}`}
+                  {pendingBet._source === 'polymarket' ? (
+                    <>
+                      {placingBet ? 'Placing...' : `Place $${pendingBet.recommended_stake?.toFixed(2)} Bet`}
+                    </>
+                  ) : (
+                    <>
+                      <ExternalLink className="w-4 h-4" />
+                      {placingBet
+                        ? 'Opening...'
+                        : `Go to ${pendingBet.bet_link?.bookmaker_display || 'Sportsbook'}`}
+                    </>
+                  )}
                 </button>
               </div>
             </div>
@@ -661,37 +752,54 @@ function App() {
                     )}
                   </div>
 
-                  {/* Top outcomes by price */}
+                  {/* Top outcomes by price with Place Bet buttons */}
                   {market.tokens && market.tokens.length > 0 && (
-                    <div className="space-y-1.5 mb-3">
+                    <div className="space-y-2 mb-3">
                       {market.tokens
                         .filter((t) => t.price > 0.01)
                         .sort((a, b) => b.price - a.price)
                         .slice(0, 5)
-                        .map((token, ti) => (
-                          <div
-                            key={ti}
-                            className="flex items-center justify-between text-xs"
-                          >
-                            <span className="text-gray-700 truncate mr-2">{token.outcome}</span>
-                            <span className="font-semibold text-primary-600 whitespace-nowrap">
-                              {(token.price * 100).toFixed(0)}%
-                            </span>
-                          </div>
-                        ))}
+                        .map((token, ti) => {
+                          const pct = (token.price * 100).toFixed(0);
+                          const stake = getTieredStake(token.price);
+                          return (
+                            <div
+                              key={ti}
+                              className="flex items-center justify-between text-xs"
+                            >
+                              <span className="text-gray-700 truncate mr-2">{token.outcome}</span>
+                              <div className="flex items-center gap-2">
+                                <span className="font-semibold text-primary-600 whitespace-nowrap">
+                                  {pct}%
+                                </span>
+                                {stake.amount > 0 && token.token_id && (
+                                  <button
+                                    onClick={() => handlePlacePolymarketBet(market, token)}
+                                    disabled={placingBet}
+                                    className="px-2 py-0.5 bg-primary-500 hover:bg-primary-600 text-white rounded text-[10px] font-bold whitespace-nowrap transition-colors disabled:opacity-50"
+                                  >
+                                    ${stake.amount}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
                     </div>
                   )}
 
-                  {market.url && (
-                    <a
-                      href={market.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-xs text-primary-600 hover:text-primary-700 font-medium"
-                    >
-                      Trade on Polymarket <ExternalLink className="w-3 h-3" />
-                    </a>
-                  )}
+                  <div className="flex items-center justify-between">
+                    {market.url && (
+                      <a
+                        href={market.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-xs text-primary-600 hover:text-primary-700 font-medium"
+                      >
+                        View on Polymarket <ExternalLink className="w-3 h-3" />
+                      </a>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -712,7 +820,9 @@ function App() {
             <li>• <strong>Confidence Score:</strong> Higher scores indicate stronger predictions (65%+ minimum)</li>
             <li>• <strong>Expected Value:</strong> Positive EV means the bet has mathematical value</li>
             <li>• <strong>Risk Score:</strong> Lower is better - indicates prediction certainty</li>
-            <li>• <strong>Stake Sizing:</strong> Calculated using Kelly Criterion for optimal bankroll management</li>
+            <li>• <strong>Tiered Stakes:</strong> $1 (60-70%) · $3 (70-80%) · $5 (80-90%) · $22 (90-99%)</li>
+            <li>• <strong>Sportsbook Bets:</strong> Opens your bookmaker with the match pre-searched</li>
+            <li>• <strong>Polymarket Futures:</strong> Place direct bets on championships, MVPs & more (USDC)</li>
           </ul>
         </div>
       </main>

@@ -116,13 +116,16 @@ const BetCard = ({ bet, rank, onPlaceBet, placingBet = false }) => {
           <div>
             <div className="flex items-center gap-2 mb-1">
               <DollarSign className="w-5 h-5 text-primary-600" />
-              <span className="text-sm font-medium text-gray-700">Recommended Stake</span>
+              <span className="text-sm font-medium text-gray-700">Tiered Stake</span>
             </div>
             <div className="text-3xl font-bold text-primary-600">
               ${recommended_stake.toFixed(2)}
             </div>
-            <div className="text-xs text-gray-600 mt-1">
-              {recommended_stake_percentage.toFixed(2)}% of bankroll
+            <div className="text-xs text-gray-600 mt-1 flex items-center gap-2">
+              <span className="badge badge-primary text-[10px] px-1.5 py-0.5">
+                {probability >= 0.90 ? '90-99%' : probability >= 0.80 ? '80-90%' : probability >= 0.70 ? '70-80%' : probability >= 0.60 ? '60-70%' : '<60%'} tier
+              </span>
+              <span>{recommended_stake_percentage.toFixed(1)}% of bankroll</span>
             </div>
           </div>
           <button
@@ -131,7 +134,7 @@ const BetCard = ({ bet, rank, onPlaceBet, placingBet = false }) => {
             className="btn btn-primary px-6 py-3 text-lg font-bold shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all disabled:opacity-60 flex items-center gap-2"
           >
             <ExternalLink className="w-5 h-5" />
-            {placingBet ? 'Opening...' : bet_link?.bookmaker_display ? `Bet at ${bet_link.bookmaker_display}` : 'Place Bet'}
+            {placingBet ? 'Opening...' : bet_link?.bookmaker_display ? `Bet $${recommended_stake.toFixed(0)} at ${bet_link.bookmaker_display}` : 'Place Bet'}
           </button>
         </div>
       </div>

@@ -147,6 +147,7 @@ def generate_bet_link(
         query = quote(f"{event_name or f'{home_team} vs {away_team}'} {sport} odds")
         return {
             "bookmaker_name": bookmaker.replace("_", " ").title(),
+            "bookmaker_display": bookmaker.replace("_", " ").title(),
             "url": f"https://www.google.com/search?q={query}",
             "search_url": f"https://www.google.com/search?q={query}",
             "color": "#666666",
@@ -164,6 +165,7 @@ def generate_bet_link(
 
     return {
         "bookmaker_name": info["name"],
+        "bookmaker_display": info["name"],
         "url": info["url"],
         "search_url": search_url,
         "color": info["color"],

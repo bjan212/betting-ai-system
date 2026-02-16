@@ -380,6 +380,14 @@ class Top3Selector:
             'timestamp': datetime.utcnow().isoformat()
         }
     
+    # Tiered stake amounts based on model probability
+    STAKE_TIERS = [
+        (0.60, 0.70, 1.0),   # 60-70% probability → $1
+        (0.70, 0.80, 3.0),   # 70-80% probability → $3
+        (0.80, 0.90, 5.0),   # 80-90% probability → $5
+        (0.90, 1.00, 22.0),  # 90-99% probability → $22
+    ]
+
     def _calculate_stake(
         self,
         probability: float,
@@ -387,45 +395,43 @@ class Top3Selector:
         confidence: float
     ) -> Dict[str, float]:
         """
-        Calculate recommended stake using Kelly Criterion
-        
+        Calculate recommended stake using fixed probability tiers.
+
+        Tiers:
+            60-70%  → $1
+            70-80%  → $3
+            80-90%  → $5
+            90-99%  → $22
+
         Args:
-            probability: Win probability
+            probability: Win probability (0-1)
             odds: Decimal odds
-            confidence: Confidence score
+            confidence: Confidence score (0-1)
         
         Returns:
-            Stake information
+            Stake information with tier label
         """
-        stake_config = self.recommendation_config.get('stake_sizing', {})
-        max_stake_pct = stake_config.get('max_stake_percentage', 0.05)
-        min_stake = stake_config.get('min_stake_amount', 10)
-        max_stake = stake_config.get('max_stake_amount', 1000)
-        
-        # Kelly Criterion: f = (bp - q) / b
-        # where b = odds - 1, p = probability, q = 1 - p
-        b = odds - 1
-        p = probability
-        q = 1 - p
-        
-        kelly_fraction = (b * p - q) / b if b > 0 else 0
-        
-        # Apply fractional Kelly (more conservative)
-        fractional_kelly = kelly_fraction * 0.25  # Use 1/4 Kelly
-        
-        # Adjust by confidence
-        adjusted_stake_pct = min(fractional_kelly * confidence, max_stake_pct)
-        
-        # Assume default bankroll of $10,000 for calculation
-        default_bankroll = 10000
-        stake_amount = default_bankroll * adjusted_stake_pct
-        
-        # Apply limits
-        stake_amount = max(min_stake, min(stake_amount, max_stake))
-        
+        stake_amount = 0.0
+        tier_label = 'below_threshold'
+
+        for low, high, amount in self.STAKE_TIERS:
+            if low <= probability < high:
+                stake_amount = amount
+                tier_label = f'{int(low*100)}-{int(high*100)}%'
+                break
+        # Cap: 99%+ still gets $22
+        if probability >= 1.0:
+            stake_amount = 22.0
+            tier_label = '90-100%'
+
+        # Bankroll percentage (assume $100 starting bankroll for display)
+        default_bankroll = 100
+        stake_pct = (stake_amount / default_bankroll) * 100 if default_bankroll else 0
+
         return {
             'amount': round(stake_amount, 2),
-            'percentage': round(adjusted_stake_pct * 100, 2)
+            'percentage': round(stake_pct, 2),
+            'tier': tier_label,
         }
     
     def _generate_rationale(
