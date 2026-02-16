@@ -16,6 +16,123 @@ logger = get_logger(__name__)
 config = get_config()
 
 
+def _seed_demo_data_if_empty():
+    """Seed demo events/odds when the database has no events (fresh deploy)."""
+    from src.database.database import db_manager
+    from src.database.models import Sport, Event, Odds
+    from datetime import datetime, timedelta
+
+    try:
+        with db_manager.get_session() as db:
+            event_count = db.query(Event).count()
+            if event_count > 0:
+                logger.info(f"Database already has {event_count} events — skipping seed")
+                return
+
+            logger.info("Empty database detected — seeding demo data")
+            now = datetime.utcnow()
+
+            demo_sports = [
+                {"name": "soccer", "category": "team_sport"},
+                {"name": "basketball", "category": "team_sport"},
+                {"name": "tennis", "category": "individual_sport"},
+            ]
+
+            demo_events = [
+                {"external_id": "demo-soccer-1", "sport": "soccer",
+                 "name": "Demo FC vs Sample United", "home_team": "Demo FC",
+                 "away_team": "Sample United", "hours": 24},
+                {"external_id": "demo-soccer-2", "sport": "soccer",
+                 "name": "Alpha City vs Beta Town", "home_team": "Alpha City",
+                 "away_team": "Beta Town", "hours": 48},
+                {"external_id": "demo-basketball-1", "sport": "basketball",
+                 "name": "Example City vs Test Town", "home_team": "Example City",
+                 "away_team": "Test Town", "hours": 36},
+                {"external_id": "demo-basketball-2", "sport": "basketball",
+                 "name": "Hoops United vs Net Masters", "home_team": "Hoops United",
+                 "away_team": "Net Masters", "hours": 72},
+                {"external_id": "demo-tennis-1", "sport": "tennis",
+                 "name": "Player A vs Player B", "home_team": "Player A",
+                 "away_team": "Player B", "hours": 12},
+                {"external_id": "demo-tennis-2", "sport": "tennis",
+                 "name": "Ace King vs Serve Pro", "home_team": "Ace King",
+                 "away_team": "Serve Pro", "hours": 60},
+            ]
+
+            # bookmaker  →  { selection: odds }
+            bookmaker_odds = {
+                "DraftKings":  {"home": 2.10, "away": 2.60, "draw": 3.30},
+                "FanDuel":     {"home": 2.20, "away": 2.50, "draw": 3.10},
+                "BetMGM":      {"home": 1.95, "away": 2.75, "draw": 3.40},
+                "Pinnacle":    {"home": 2.05, "away": 2.65, "draw": 3.25},
+                "Betfair":     {"home": 2.30, "away": 2.40, "draw": 3.50},
+            }
+
+            sports_map = {}
+            for s in demo_sports:
+                existing = db.query(Sport).filter(Sport.name == s["name"]).first()
+                if existing:
+                    sports_map[s["name"]] = existing
+                else:
+                    new_sport = Sport(name=s["name"], category=s["category"], is_active=True)
+                    db.add(new_sport)
+                    db.flush()
+                    sports_map[s["name"]] = new_sport
+
+            events_created = 0
+            odds_created = 0
+
+            for ev in demo_events:
+                existing = db.query(Event).filter(Event.external_id == ev["external_id"]).first()
+                if existing:
+                    continue
+
+                db_event = Event(
+                    sport_id=sports_map[ev["sport"]].id,
+                    external_id=ev["external_id"],
+                    name=ev["name"],
+                    home_team=ev["home_team"],
+                    away_team=ev["away_team"],
+                    start_time=now + timedelta(hours=ev["hours"]),
+                    status="upcoming",
+                    venue="Demo Arena",
+                )
+                db.add(db_event)
+                db.flush()
+                events_created += 1
+
+                for bookmaker, selections in bookmaker_odds.items():
+                    for selection, odds_decimal in selections.items():
+                        # Skip draw for tennis
+                        if ev["sport"] == "tennis" and selection == "draw":
+                            continue
+                        db.add(Odds(
+                            event_id=db_event.id,
+                            bookmaker=bookmaker,
+                            market_type="h2h",
+                            selection=selection,
+                            odds_decimal=odds_decimal,
+                            is_current=True,
+                        ))
+                        odds_created += 1
+
+            logger.info(f"Seeded {events_created} events, {odds_created} odds entries")
+
+    except Exception as e:
+        logger.error(f"Error seeding demo data: {e}")
+
+
+async def _try_fetch_live_odds():
+    """Attempt one-shot live odds fetch in the background (non-blocking)."""
+    try:
+        from src.data_ingestion.odds_ingestion_service import OddsIngestionService
+        service = OddsIngestionService()
+        await service.fetch_and_store_odds()
+        logger.info("Live odds fetch completed")
+    except Exception as e:
+        logger.warning(f"Live odds fetch skipped: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager"""
@@ -23,6 +140,13 @@ async def lifespan(app: FastAPI):
     logger.info("Starting Betting AI System API")
     init_database()
     logger.info("Database initialized")
+
+    # Auto-seed demo data if DB is empty (fresh deploy)
+    _seed_demo_data_if_empty()
+
+    # Try fetching live odds (best-effort, won't block startup)
+    import asyncio
+    asyncio.create_task(_try_fetch_live_odds())
     
     yield
     
