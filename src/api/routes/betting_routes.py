@@ -589,3 +589,73 @@ async def refresh_odds():
     except Exception as e:
         logger.error(f"Error refreshing odds: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─────────────────── Ledger endpoints ───────────────────
+
+@router.get("/ledger")
+async def get_ledger(
+    limit: int = 100,
+    status: Optional[str] = None,
+    db: Session = Depends(get_db_session),
+):
+    """Return the bet ledger (recorded & graded bets)."""
+    try:
+        from src.services.auto_bet_service import get_ledger as _get_ledger
+        entries = _get_ledger(db, limit=limit, status_filter=status)
+        return {
+            "entries": entries,
+            "count": len(entries),
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+    except Exception as e:
+        logger.error(f"Error fetching ledger: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/ledger/stats")
+async def get_ledger_stats(db: Session = Depends(get_db_session)):
+    """Return aggregate P&L stats from the ledger."""
+    try:
+        from src.services.auto_bet_service import get_ledger_summary
+        summary = get_ledger_summary(db)
+        return {
+            **summary,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+    except Exception as e:
+        logger.error(f"Error fetching ledger stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/auto-bet/trigger")
+async def trigger_auto_bet(db: Session = Depends(get_db_session)):
+    """Manually trigger one auto-bet cycle (find bets + record)."""
+    try:
+        from src.services.auto_bet_service import record_top3_bets
+        recorded = record_top3_bets(db)
+        return {
+            "success": True,
+            "recorded": len(recorded),
+            "bets": recorded,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+    except Exception as e:
+        logger.error(f"Error triggering auto-bet: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/auto-bet/grade")
+async def trigger_grade():
+    """Manually trigger result grading for pending bets."""
+    try:
+        from src.services.auto_bet_service import grade_pending_bets
+        result = await grade_pending_bets()
+        return {
+            "success": True,
+            **result,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+    except Exception as e:
+        logger.error(f"Error grading bets: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { TrendingUp, RefreshCw, Activity, Wallet, BarChart3, Settings, ExternalLink, Search } from 'lucide-react';
+import { TrendingUp, RefreshCw, Activity, Wallet, BarChart3, Settings, ExternalLink, Search, BookOpen, DollarSign, CheckCircle, XCircle, Clock } from 'lucide-react';
 import BetCard from './components/BetCard';
 import { bettingAPI, cryptoAPI, systemAPI } from './services/api';
 
@@ -22,6 +22,11 @@ function App() {
   const [polymarketMarkets, setPolymarketMarkets] = useState([]);
   const [polymarketMarketsLoading, setPolymarketMarketsLoading] = useState(false);
   const [polymarketSearch, setPolymarketSearch] = useState('');
+  // Ledger state
+  const [ledger, setLedger] = useState([]);
+  const [ledgerStats, setLedgerStats] = useState(null);
+  const [ledgerLoading, setLedgerLoading] = useState(false);
+  const [ledgerFilter, setLedgerFilter] = useState(null); // null = all, 'won', 'lost', 'pending'
   const [polymarketConfig, setPolymarketConfig] = useState({
     privateKey: '',
     funderAddress: '',
@@ -65,11 +70,29 @@ function App() {
     }
   };
 
+  // Fetch ledger data
+  const fetchLedger = async (statusFilter = ledgerFilter) => {
+    try {
+      setLedgerLoading(true);
+      const [ledgerData, statsData] = await Promise.all([
+        bettingAPI.getLedger(100, statusFilter),
+        bettingAPI.getLedgerStats(),
+      ]);
+      setLedger(ledgerData.entries || []);
+      setLedgerStats(statsData);
+    } catch (err) {
+      console.error('Error fetching ledger:', err);
+    } finally {
+      setLedgerLoading(false);
+    }
+  };
+
   // Initial load
   useEffect(() => {
     fetchRecommendations();
     fetchBalance();
     fetchStats();
+    fetchLedger();
   }, []);
 
   useEffect(() => {
@@ -135,6 +158,7 @@ function App() {
       fetchRecommendations();
       fetchBalance();
       fetchStats();
+      fetchLedger();
     }, 60000); // 60 seconds
 
     return () => clearInterval(interval);
@@ -254,6 +278,7 @@ function App() {
     fetchRecommendations();
     fetchBalance();
     fetchStats();
+    fetchLedger();
   };
 
   // Fetch Polymarket sports futures markets
@@ -812,6 +837,190 @@ function App() {
           )}
         </div>
 
+        {/* ─── Bet Ledger Section ─── */}
+        <div className="mt-12 mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900 mb-1 flex items-center gap-2">
+                <BookOpen className="w-6 h-6" /> Bet Ledger
+              </h2>
+              <p className="text-gray-600 text-sm">
+                Auto-tracked bets with results &amp; P&amp;L — running non-stop
+              </p>
+            </div>
+            <button
+              onClick={() => fetchLedger()}
+              disabled={ledgerLoading}
+              className="btn btn-secondary flex items-center gap-2"
+            >
+              <RefreshCw className={`w-4 h-4 ${ledgerLoading ? 'animate-spin' : ''}`} />
+              Refresh
+            </button>
+          </div>
+
+          {/* P&L Summary Cards */}
+          {ledgerStats && (
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+              <div className="stat-card">
+                <p className="text-xs text-gray-500 mb-1">Total Bets</p>
+                <p className="text-xl font-bold text-gray-900">{ledgerStats.total_bets}</p>
+              </div>
+              <div className="stat-card">
+                <p className="text-xs text-gray-500 mb-1">Win Rate</p>
+                <p className="text-xl font-bold text-success-600">{ledgerStats.win_rate?.toFixed(1)}%</p>
+              </div>
+              <div className="stat-card">
+                <p className="text-xs text-gray-500 mb-1">Staked</p>
+                <p className="text-xl font-bold text-gray-900">${ledgerStats.total_staked?.toFixed(2)}</p>
+              </div>
+              <div className="stat-card">
+                <p className="text-xs text-gray-500 mb-1">Returned</p>
+                <p className="text-xl font-bold text-primary-600">${ledgerStats.total_returned?.toFixed(2)}</p>
+              </div>
+              <div className="stat-card">
+                <p className="text-xs text-gray-500 mb-1">Net P&amp;L</p>
+                <p className={`text-xl font-bold ${(ledgerStats.net_profit || 0) >= 0 ? 'text-success-600' : 'text-danger-600'}`}>
+                  {(ledgerStats.net_profit || 0) >= 0 ? '+' : ''}${ledgerStats.net_profit?.toFixed(2)}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* ROI + Streak Banner */}
+          {ledgerStats && (ledgerStats.total_bets > 0) && (
+            <div className="flex items-center gap-4 mb-4 text-sm">
+              <span className="px-3 py-1 rounded-full bg-gray-100 text-gray-700 font-medium">
+                ROI: {ledgerStats.roi?.toFixed(1)}%
+              </span>
+              {ledgerStats.current_streak && ledgerStats.current_streak.count > 0 && (
+                <span className={`px-3 py-1 rounded-full font-medium ${
+                  ledgerStats.current_streak.type === 'won'
+                    ? 'bg-success-50 text-success-700'
+                    : 'bg-danger-50 text-danger-700'
+                }`}>
+                  {ledgerStats.current_streak.type === 'won' ? '🔥' : '🧊'} {ledgerStats.current_streak.count} {ledgerStats.current_streak.type} streak
+                </span>
+              )}
+              <span className="text-gray-500">
+                {ledgerStats.won}W · {ledgerStats.lost}L · {ledgerStats.pending} pending · {ledgerStats.void || 0} void
+              </span>
+            </div>
+          )}
+
+          {/* Filter Tabs */}
+          <div className="flex items-center gap-2 mb-4">
+            {[
+              { label: 'All', value: null },
+              { label: 'Pending', value: 'pending' },
+              { label: 'Won', value: 'won' },
+              { label: 'Lost', value: 'lost' },
+              { label: 'Void', value: 'void' },
+            ].map((f) => (
+              <button
+                key={f.label}
+                onClick={() => { setLedgerFilter(f.value); fetchLedger(f.value); }}
+                className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                  ledgerFilter === f.value
+                    ? 'bg-primary-500 text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Ledger Table */}
+          {ledgerLoading && (
+            <div className="text-center py-8 text-gray-500">Loading ledger...</div>
+          )}
+
+          {!ledgerLoading && ledger.length === 0 && (
+            <div className="text-center py-12 text-gray-400">
+              <BookOpen className="w-10 h-10 mx-auto mb-2 opacity-50" />
+              <p>No bets recorded yet. The auto-bet system will start recording shortly.</p>
+            </div>
+          )}
+
+          {!ledgerLoading && ledger.length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-left text-xs text-gray-500 uppercase tracking-wider">
+                    <th className="pb-2 pr-4">Date</th>
+                    <th className="pb-2 pr-4">Event</th>
+                    <th className="pb-2 pr-4">Selection</th>
+                    <th className="pb-2 pr-4 text-right">Odds</th>
+                    <th className="pb-2 pr-4 text-right">Confidence</th>
+                    <th className="pb-2 pr-4 text-right">Stake</th>
+                    <th className="pb-2 pr-4 text-center">Status</th>
+                    <th className="pb-2 text-right">P&amp;L</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {ledger.map((entry) => (
+                    <tr key={entry.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="py-2 pr-4 text-gray-500 whitespace-nowrap">
+                        {entry.created_at ? new Date(entry.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}
+                      </td>
+                      <td className="py-2 pr-4 font-medium text-gray-900 max-w-[200px] truncate">
+                        {entry.event_name}
+                      </td>
+                      <td className="py-2 pr-4 text-gray-700">{entry.selection}</td>
+                      <td className="py-2 pr-4 text-right text-gray-700">
+                        {entry.recommended_odds ? entry.recommended_odds.toFixed(2) : '—'}
+                      </td>
+                      <td className="py-2 pr-4 text-right">
+                        <span className={`font-semibold ${
+                          (entry.confidence_score || 0) >= 0.8 ? 'text-success-600'
+                          : (entry.confidence_score || 0) >= 0.6 ? 'text-primary-600'
+                          : 'text-gray-500'
+                        }`}>
+                          {entry.confidence_score ? (entry.confidence_score * 100).toFixed(0) + '%' : '—'}
+                        </span>
+                      </td>
+                      <td className="py-2 pr-4 text-right font-medium text-gray-900">
+                        ${entry.recommended_stake?.toFixed(2) || '0.00'}
+                      </td>
+                      <td className="py-2 pr-4 text-center">
+                        {entry.status === 'won' && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-success-50 text-success-700 text-xs font-semibold">
+                            <CheckCircle className="w-3 h-3" /> Won
+                          </span>
+                        )}
+                        {entry.status === 'lost' && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-danger-50 text-danger-700 text-xs font-semibold">
+                            <XCircle className="w-3 h-3" /> Lost
+                          </span>
+                        )}
+                        {entry.status === 'pending' && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-yellow-50 text-yellow-700 text-xs font-semibold">
+                            <Clock className="w-3 h-3" /> Pending
+                          </span>
+                        )}
+                        {entry.status === 'void' && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 text-xs font-semibold">
+                            Void
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-2 text-right font-semibold">
+                        {entry.profit != null ? (
+                          <span className={entry.profit >= 0 ? 'text-success-600' : 'text-danger-600'}>
+                            {entry.profit >= 0 ? '+' : ''}${entry.profit.toFixed(2)}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
         {/* Info Footer */}
         <div className="mt-12 p-6 bg-blue-50 border border-blue-200 rounded-lg">
           <h3 className="font-semibold text-blue-900 mb-2">ℹ️ How It Works</h3>
@@ -821,6 +1030,8 @@ function App() {
             <li>• <strong>Expected Value:</strong> Positive EV means the bet has mathematical value</li>
             <li>• <strong>Risk Score:</strong> Lower is better - indicates prediction certainty</li>
             <li>• <strong>Tiered Stakes:</strong> $1 (60-70%) · $3 (70-80%) · $5 (80-90%) · $22 (90-99%)</li>
+            <li>• <strong>Auto-Bet:</strong> System continuously finds and records bets in the ledger</li>
+            <li>• <strong>Result Grading:</strong> Completed events are auto-graded (won/lost) via scores API</li>
             <li>• <strong>Sportsbook Bets:</strong> Opens your bookmaker with the match pre-searched</li>
             <li>• <strong>Polymarket Futures:</strong> Place direct bets on championships, MVPs & more (USDC)</li>
           </ul>

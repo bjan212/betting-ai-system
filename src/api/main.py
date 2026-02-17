@@ -190,11 +190,23 @@ async def lifespan(app: FastAPI):
     from src.api.routes.betting_routes import _ensemble_predictor
     import src.api.routes.betting_routes as br
     br._ensemble_predictor = None
+
+    # ── Start auto-bet background loop ──
+    import asyncio
+    from src.services.auto_bet_service import auto_bet_loop, stop_auto_bet
+    auto_bet_task = asyncio.create_task(auto_bet_loop())
+    logger.info("Auto-bet background loop launched")
     
     yield
     
     # Shutdown
     logger.info("Shutting down Betting AI System API")
+    stop_auto_bet()
+    auto_bet_task.cancel()
+    try:
+        await auto_bet_task
+    except asyncio.CancelledError:
+        pass
     close_database()
 
 

@@ -282,7 +282,59 @@ class OddsAPIClient:
         except Exception as e:
             logger.error(f"Error fetching historical odds: {e}")
             return []
-    
+
+    async def get_scores(
+        self,
+        sport: str,
+        days_from: int = 3,
+    ) -> List[Dict[str, Any]]:
+        """
+        Get scores/results for recently completed events.
+
+        Uses The Odds API /v4/sports/{sport}/scores endpoint.
+        Costs 1 credit per call (no extra market cost).
+
+        Args:
+            sport: Sport key (e.g. 'soccer_epl', 'basketball_nba')
+            days_from: Return scores for events starting within this many days in the past (max 3)
+
+        Returns:
+            List of event dicts with 'scores', 'completed' fields
+        """
+        try:
+            sport_key = self.sport_keys.get(sport.lower(), sport)
+            params = {
+                'apiKey': self.api_key,
+                'daysFrom': min(days_from, 3),
+                'dateFormat': 'iso',
+            }
+            response = await self.client.get(
+                f'/sports/{sport_key}/scores',
+                params=params,
+            )
+            response.raise_for_status()
+
+            events = response.json()
+            remaining = response.headers.get('x-requests-remaining')
+            self.credits_remaining = int(remaining) if remaining else self.credits_remaining
+            completed = [e for e in events if e.get('completed')]
+            logger.info(
+                f"Scores for {sport_key}: {len(completed)} completed / {len(events)} total. "
+                f"Credits remaining: {remaining}"
+            )
+            return events
+
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401 and 'OUT_OF_USAGE_CREDITS' in e.response.text:
+                self.credits_remaining = 0
+                logger.error("Odds API credits exhausted")
+                raise
+            logger.error(f"HTTP error fetching scores: {e.response.status_code}")
+            return []
+        except Exception as e:
+            logger.error(f"Error fetching scores: {e}")
+            return []
+
     async def get_usage_quota(self) -> Dict[str, Any]:
         """
         Get API usage quota information

@@ -132,6 +132,32 @@ export const bettingAPI = {
     });
     return response.data;
   },
+
+  // Ledger — all recorded bets with P&L
+  getLedger: async (limit = 100, status = null) => {
+    const params = { limit };
+    if (status) params.status = status;
+    const response = await api.get('/api/v1/betting/ledger', { params });
+    return response.data;
+  },
+
+  // Ledger aggregate stats
+  getLedgerStats: async () => {
+    const response = await api.get('/api/v1/betting/ledger/stats');
+    return response.data;
+  },
+
+  // Manually trigger one auto-bet cycle
+  triggerAutoBet: async () => {
+    const response = await api.post('/api/v1/betting/auto-bet/trigger');
+    return response.data;
+  },
+
+  // Manually trigger result grading
+  triggerGrade: async () => {
+    const response = await api.post('/api/v1/betting/auto-bet/grade');
+    return response.data;
+  },
 };
 
 // Crypto API
